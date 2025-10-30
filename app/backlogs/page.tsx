@@ -67,6 +67,8 @@ export default function BacklogsPage() {
     assignee: '',
   });
   const [projects, setProjects] = useState<string[]>([]);
+  const [isAddingNewProject, setIsAddingNewProject] = useState(false);
+  const [newProjectName, setNewProjectName] = useState('');
 
   useEffect(() => {
     fetchBacklogs();
@@ -306,6 +308,8 @@ export default function BacklogsPage() {
       assignee: '',
     });
     setEditingBacklog(null);
+    setIsAddingNewProject(false);
+    setNewProjectName('');
   };
 
   const openAddModal = () => {
@@ -504,27 +508,49 @@ export default function BacklogsPage() {
 
                 <div style={styles.formGroup}>
                   <label style={styles.label}>Project *</label>
-                  {projects.length > 0 ? (
+                  {!isAddingNewProject ? (
                     <select
                       style={styles.input}
                       value={formData.project}
-                      onChange={(e) => setFormData({ ...formData, project: e.target.value })}
+                      onChange={(e) => {
+                        if (e.target.value === '__new__') {
+                          setIsAddingNewProject(true);
+                          setFormData({ ...formData, project: '' });
+                        } else {
+                          setFormData({ ...formData, project: e.target.value });
+                        }
+                      }}
                       required
                     >
-                      <option value="">Select or type new...</option>
+                      <option value="">Select a project...</option>
                       {projects.map((p) => (
                         <option key={p} value={p}>{p}</option>
                       ))}
+                      <option value="__new__">+ Add New Project</option>
                     </select>
-                  ) : null}
-                  <input
-                    type="text"
-                    style={{ ...styles.input, marginTop: '8px' }}
-                    placeholder="Or enter new project name"
-                    value={formData.project}
-                    onChange={(e) => setFormData({ ...formData, project: e.target.value })}
-                    required
-                  />
+                  ) : (
+                    <div>
+                      <input
+                        type="text"
+                        style={styles.input}
+                        placeholder="Enter new project name"
+                        value={formData.project}
+                        onChange={(e) => setFormData({ ...formData, project: e.target.value })}
+                        required
+                        autoFocus
+                      />
+                      <button
+                        type="button"
+                        style={styles.backToSelectButton}
+                        onClick={() => {
+                          setIsAddingNewProject(false);
+                          setFormData({ ...formData, project: '' });
+                        }}
+                      >
+                        ← Back to select
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 <div style={styles.formRow}>
@@ -887,6 +913,23 @@ const styles: { [key: string]: React.CSSProperties } = {
     outline: 'none',
     resize: 'vertical',
     fontFamily: 'inherit',
+  },
+  helpText: {
+    fontSize: '12px',
+    color: '#718096',
+    marginTop: '4px',
+  },
+  backToSelectButton: {
+    marginTop: '8px',
+    padding: '8px 12px',
+    border: '1px solid #e2e8f0',
+    background: 'white',
+    color: '#667eea',
+    borderRadius: '6px',
+    fontSize: '13px',
+    fontWeight: '500',
+    cursor: 'pointer',
+    transition: 'all 0.2s',
   },
   formActions: {
     display: 'flex',

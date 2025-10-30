@@ -15,3 +15,49 @@ export async function GET(request: NextRequest) {
     return errorResponse('Server error');
   }
 }
+
+export async function POST(request: NextRequest) {
+  try {
+    const authUser = await requireAuth(request);
+
+    // Only admin and managers can add users
+    if (authUser.role !== 'admin' && authUser.role !== 'manager') {
+      return errorResponse('Not authorized to add users', 403);
+    }
+
+    const body = await request.json();
+    const { username, name, email, position, password, role } = body;
+
+    // Validate required fields
+    if (!username || !name || !position || !password) {
+      return errorResponse('Missing required fields', 400);
+    }
+
+    // Check if username already exists
+    const existingUser = await User.findOne({ username });
+    if (existingUser) {
+      return errorResponse('Username already exists', 400);
+    }
+
+    // Create user (password will be hashed by the pre-save hook in the model)
+    const user = await User.create({
+      username,
+      name,
+      email: email || `${username}@company.com`, // Default email if not provided
+      position,
+      password, // Will be hashed by model pre-save hook
+      role: role || 'member',
+      isActive: true,
+    });
+
+    // Return user without password
+    const userWithoutPassword = await User.findById(user._id).select('-password');
+    return successResponse({ user: userWithoutPassword }, 201);
+  } catch (error: any) {
+    if (error.message === 'Unauthorized') {
+      return errorResponse('Not authorized', 401);
+    }
+    console.error('Create user error:', error);
+    return errorResponse(error.message || 'Server error');
+  }
+}
