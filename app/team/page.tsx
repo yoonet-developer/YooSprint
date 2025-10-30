@@ -26,6 +26,7 @@ export default function TeamPage() {
     name: '',
     position: '',
     password: '',
+    role: 'member' as 'admin' | 'manager' | 'member',
   });
   const [editFormData, setEditFormData] = useState({
     username: '',
@@ -77,7 +78,7 @@ export default function TeamPage() {
           name: addFormData.name,
           position: addFormData.position,
           password: addFormData.password,
-          role: 'member',
+          role: addFormData.role,
         }),
       });
 
@@ -189,6 +190,7 @@ export default function TeamPage() {
       name: '',
       position: '',
       password: '',
+      role: 'member',
     });
   };
 
@@ -347,6 +349,21 @@ export default function TeamPage() {
                   />
                   <small style={styles.helpText}>User can change this after first login</small>
                 </div>
+
+                {isAdmin && (
+                  <div style={styles.formGroup}>
+                    <label style={styles.label}>Access Level</label>
+                    <select
+                      style={styles.input}
+                      value={addFormData.role}
+                      onChange={(e) => setAddFormData({ ...addFormData, role: e.target.value as any })}
+                    >
+                      <option value="member">Team Member</option>
+                      <option value="manager">Manager</option>
+                      <option value="admin">Admin</option>
+                    </select>
+                  </div>
+                )}
 
                 <div style={styles.formActions}>
                   <button type="submit" style={styles.primaryButton}>
