@@ -269,7 +269,7 @@ export default function TasksPage() {
                       <strong>Sprint:</strong> {task.sprint.name}
                     </div>
                   )}
-                  {task.sprint && (
+                  {task.sprint && task.sprint.endDate && (
                     <div style={styles.metaItem}>
                       <strong>Sprint End:</strong> {formatDate(task.sprint.endDate)}
                     </div>

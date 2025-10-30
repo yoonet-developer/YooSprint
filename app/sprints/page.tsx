@@ -45,6 +45,8 @@ export default function SprintsPage() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('active');
   const [showModal, setShowModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deletingSprint, setDeletingSprint] = useState<Sprint | null>(null);
   const [editingSprint, setEditingSprint] = useState<Sprint | null>(null);
   const [backlogSearch, setBacklogSearch] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
@@ -248,12 +250,17 @@ export default function SprintsPage() {
     }));
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this sprint? All backlog items will be moved back to the backlog.')) return;
+  const openDeleteModal = (sprint: Sprint) => {
+    setDeletingSprint(sprint);
+    setShowDeleteModal(true);
+  };
+
+  const handleDelete = async () => {
+    if (!deletingSprint) return;
 
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch(`/api/sprints/${id}`, {
+      const response = await fetch(`/api/sprints/${deletingSprint._id}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -262,6 +269,8 @@ export default function SprintsPage() {
 
       const data = await response.json();
       if (data.success) {
+        setShowDeleteModal(false);
+        setDeletingSprint(null);
         fetchSprints();
         fetchBacklogs();
       } else {
@@ -444,7 +453,7 @@ export default function SprintsPage() {
                     <button style={styles.actionButton} onClick={() => handleEdit(sprint)}>
                       Edit
                     </button>
-                    <button style={styles.deleteButton} onClick={() => handleDelete(sprint._id)}>
+                    <button style={styles.deleteButton} onClick={() => openDeleteModal(sprint)}>
                       Delete
                     </button>
                   </div>
@@ -543,6 +552,36 @@ export default function SprintsPage() {
             })
           )}
         </div>
+
+        {/* Delete Confirmation Modal */}
+        {showDeleteModal && deletingSprint && (
+          <div style={styles.modalOverlay} onClick={() => setShowDeleteModal(false)}>
+            <div style={styles.deleteModal} onClick={(e) => e.stopPropagation()}>
+              <h2 style={styles.deleteModalTitle}>Delete Sprint?</h2>
+              <p style={styles.deleteModalMessage}>
+                Are you sure you want to delete <strong>{deletingSprint.name}</strong>?
+                All backlog items will be moved back to the backlog.
+              </p>
+              <div style={styles.deleteModalActions}>
+                <button
+                  style={styles.deleteConfirmButton}
+                  onClick={handleDelete}
+                >
+                  Delete Sprint
+                </button>
+                <button
+                  style={styles.secondaryButton}
+                  onClick={() => {
+                    setShowDeleteModal(false);
+                    setDeletingSprint(null);
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Modal */}
         {showModal && (
@@ -993,6 +1032,41 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontWeight: '600',
     marginBottom: '24px',
     color: '#2d3748',
+  },
+  deleteModal: {
+    background: 'white',
+    borderRadius: '12px',
+    padding: '32px',
+    width: '90%',
+    maxWidth: '450px',
+  },
+  deleteModalTitle: {
+    fontSize: '22px',
+    fontWeight: '600',
+    marginBottom: '16px',
+    color: '#2d3748',
+  },
+  deleteModalMessage: {
+    fontSize: '15px',
+    color: '#4a5568',
+    lineHeight: '1.6',
+    marginBottom: '24px',
+  },
+  deleteModalActions: {
+    display: 'flex',
+    gap: '12px',
+    justifyContent: 'flex-end',
+  },
+  deleteConfirmButton: {
+    padding: '12px 24px',
+    border: 'none',
+    background: '#f56565',
+    color: 'white',
+    borderRadius: '8px',
+    fontSize: '14px',
+    fontWeight: '600',
+    cursor: 'pointer',
+    transition: 'background 0.2s',
   },
   form: {
     display: 'flex',

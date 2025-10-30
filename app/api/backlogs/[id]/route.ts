@@ -10,7 +10,7 @@ export async function GET(
     await requireAuth(request);
     const backlog = await Backlog.findById(params.id)
       .populate('assignee', 'name email position')
-      .populate('sprint', 'name status');
+      .populate('sprint', 'name status startDate endDate');
 
     if (!backlog) {
       return errorResponse('Backlog not found', 404);
@@ -39,7 +39,7 @@ export async function PUT(
       { new: true, runValidators: true }
     )
       .populate('assignee', 'name email position')
-      .populate('sprint', 'name status');
+      .populate('sprint', 'name status startDate endDate');
 
     if (!backlog) {
       return errorResponse('Backlog not found', 404);
