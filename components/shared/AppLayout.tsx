@@ -1,0 +1,580 @@
+'use client';
+
+import { ReactNode, useEffect, useState } from 'react';
+import { useRouter, usePathname } from 'next/navigation';
+import Link from 'next/link';
+
+interface User {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  position: string;
+}
+
+interface AppLayoutProps {
+  children: ReactNode;
+}
+
+export default function AppLayout({ children }: AppLayoutProps) {
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [showUserDropdown, setShowUserDropdown] = useState(false);
+  const [showTimelineDropdown, setShowTimelineDropdown] = useState(false);
+  const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
+  const [passwordForm, setPasswordForm] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: '',
+  });
+  const [passwordError, setPasswordError] = useState('');
+  const [passwordLoading, setPasswordLoading] = useState(false);
+  const router = useRouter();
+  const pathname = usePathname();
+
+  useEffect(() => {
+    const checkAuth = async () => {
+      const token = localStorage.getItem('token');
+      const userData = localStorage.getItem('user');
+
+      if (!token || !userData) {
+        router.push('/login');
+        return;
+      }
+
+      try {
+        setUser(JSON.parse(userData));
+      } catch (error) {
+        console.error('Error parsing user data:', error);
+        router.push('/login');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    checkAuth();
+
+    // Session timeout
+    import('@/lib/utils/sessionTimeout').then(({ initializeInactivityMonitoring }) => {
+      const cleanup = initializeInactivityMonitoring(() => {
+        alert('Your session has expired due to inactivity. Please log in again.');
+        handleLogout();
+      });
+
+      return () => cleanup();
+    });
+  }, [router]);
+
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } catch (error) {
+      console.error('Logout error:', error);
+    } finally {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      router.push('/login');
+    }
+  };
+
+  const handleChangePassword = () => {
+    setShowUserDropdown(false);
+    setShowChangePasswordModal(true);
+    setPasswordError('');
+    setPasswordForm({
+      currentPassword: '',
+      newPassword: '',
+      confirmPassword: '',
+    });
+  };
+
+  const handlePasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordError('');
+    setPasswordLoading(true);
+
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch('/api/auth/change-password', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify(passwordForm),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        alert('Password changed successfully!');
+        setShowChangePasswordModal(false);
+        setPasswordForm({
+          currentPassword: '',
+          newPassword: '',
+          confirmPassword: '',
+        });
+      } else {
+        setPasswordError(data.message || 'Failed to change password');
+      }
+    } catch (error) {
+      console.error('Change password error:', error);
+      setPasswordError('An error occurred. Please try again.');
+    } finally {
+      setPasswordLoading(false);
+    }
+  };
+
+  const closePasswordModal = () => {
+    setShowChangePasswordModal(false);
+    setPasswordError('');
+    setPasswordForm({
+      currentPassword: '',
+      newPassword: '',
+      confirmPassword: '',
+    });
+  };
+
+  if (loading) {
+    return (
+      <div style={styles.loadingContainer}>
+        <div style={styles.loader}>Loading...</div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return null;
+  }
+
+  const baseNavItems = [
+    { label: 'Dashboard', href: '/dashboard' },
+    { label: 'Backlogs', href: '/backlogs' },
+    { label: 'Sprints', href: '/sprints' },
+    { label: 'My Tasks', href: '/tasks' },
+  ];
+
+  const adminManagerItems = [
+    { label: 'Team', href: '/team' },
+  ];
+
+  const navItems = user.role === 'admin' || user.role === 'manager'
+    ? [...baseNavItems, ...adminManagerItems]
+    : baseNavItems;
+
+  const isTimelineActive = pathname?.startsWith('/timeline');
+
+  return (
+    <div style={styles.container}>
+      {/* Header */}
+      <header style={styles.header}>
+        <h1 style={styles.headerTitle}>YooSprint</h1>
+        <div style={styles.userInfoContainer}>
+          <div
+            style={styles.userInfo}
+            onClick={() => setShowUserDropdown(!showUserDropdown)}
+          >
+            <span style={styles.userName}>{user.name}</span>
+            <span style={styles.dropdownArrow}>▼</span>
+          </div>
+          {showUserDropdown && (
+            <div style={styles.userDropdown}>
+              <button onClick={handleChangePassword} style={styles.dropdownItem}>
+                Change Password
+              </button>
+              <button onClick={handleLogout} style={styles.dropdownItem}>
+                Logout
+              </button>
+            </div>
+          )}
+        </div>
+      </header>
+
+      {/* Sidebar */}
+      <nav style={styles.sidebar}>
+        <ul style={styles.navMenu}>
+          {navItems.map((item) => (
+            <li key={item.href} style={styles.navItem}>
+              <Link
+                href={item.href}
+                style={{
+                  ...styles.navLink,
+                  ...(pathname === item.href ? styles.navLinkActive : {}),
+                }}
+              >
+                {item.label}
+              </Link>
+            </li>
+          ))}
+
+          {/* Timeline Dropdown for Admin/Manager */}
+          {(user.role === 'admin' || user.role === 'manager') && (
+            <li style={styles.navItem}>
+              <div
+                style={{
+                  ...styles.navLink,
+                  ...(isTimelineActive ? styles.navLinkActive : {}),
+                  cursor: 'pointer',
+                  position: 'relative',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                }}
+                onClick={() => setShowTimelineDropdown(!showTimelineDropdown)}
+              >
+                <span>Timeline</span>
+                <span style={{ fontSize: '10px' }}>{showTimelineDropdown ? '▲' : '▼'}</span>
+              </div>
+
+              {showTimelineDropdown && (
+                <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+                  <li style={{ margin: 0 }}>
+                    <Link
+                      href="/timeline?view=sprint"
+                      style={{
+                        display: 'block',
+                        padding: '12px 25px 12px 45px',
+                        color: 'white',
+                        textDecoration: 'none',
+                        fontSize: '14px',
+                        transition: 'all 0.3s',
+                      }}
+                      onClick={() => setShowTimelineDropdown(false)}
+                    >
+                      Sprint Timeline
+                    </Link>
+                  </li>
+                  <li style={{ margin: 0 }}>
+                    <Link
+                      href="/timeline?view=project"
+                      style={{
+                        display: 'block',
+                        padding: '12px 25px 12px 45px',
+                        color: 'white',
+                        textDecoration: 'none',
+                        fontSize: '14px',
+                        transition: 'all 0.3s',
+                      }}
+                      onClick={() => setShowTimelineDropdown(false)}
+                    >
+                      Project Timeline
+                    </Link>
+                  </li>
+                </ul>
+              )}
+            </li>
+          )}
+        </ul>
+      </nav>
+
+      {/* Main Content */}
+      <main style={styles.mainContent}>{children}</main>
+
+      {/* Change Password Modal */}
+      {showChangePasswordModal && (
+        <div style={styles.modalOverlay} onClick={closePasswordModal}>
+          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+            <div style={styles.modalHeader}>
+              <h2 style={styles.modalTitle}>Change Password</h2>
+              <button style={styles.closeButton} onClick={closePasswordModal}>
+                ×
+              </button>
+            </div>
+
+            <form onSubmit={handlePasswordSubmit} style={styles.form}>
+              {passwordError && (
+                <div style={styles.errorMessage}>{passwordError}</div>
+              )}
+
+              <div style={styles.formGroup}>
+                <label style={styles.label}>Current Password *</label>
+                <input
+                  type="password"
+                  style={styles.input}
+                  value={passwordForm.currentPassword}
+                  onChange={(e) =>
+                    setPasswordForm({ ...passwordForm, currentPassword: e.target.value })
+                  }
+                  required
+                  disabled={passwordLoading}
+                />
+              </div>
+
+              <div style={styles.formGroup}>
+                <label style={styles.label}>New Password *</label>
+                <input
+                  type="password"
+                  style={styles.input}
+                  value={passwordForm.newPassword}
+                  onChange={(e) =>
+                    setPasswordForm({ ...passwordForm, newPassword: e.target.value })
+                  }
+                  required
+                  minLength={6}
+                  disabled={passwordLoading}
+                />
+                <small style={styles.helpText}>Password must be at least 6 characters</small>
+              </div>
+
+              <div style={styles.formGroup}>
+                <label style={styles.label}>Confirm New Password *</label>
+                <input
+                  type="password"
+                  style={styles.input}
+                  value={passwordForm.confirmPassword}
+                  onChange={(e) =>
+                    setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })
+                  }
+                  required
+                  disabled={passwordLoading}
+                />
+              </div>
+
+              <div style={styles.formActions}>
+                <button
+                  type="submit"
+                  style={{
+                    ...styles.primaryButton,
+                    opacity: passwordLoading ? 0.6 : 1,
+                    cursor: passwordLoading ? 'not-allowed' : 'pointer',
+                  }}
+                  disabled={passwordLoading}
+                >
+                  {passwordLoading ? 'Changing Password...' : 'Change Password'}
+                </button>
+                <button
+                  type="button"
+                  style={styles.secondaryButton}
+                  onClick={closePasswordModal}
+                  disabled={passwordLoading}
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const styles: { [key: string]: React.CSSProperties } = {
+  container: {
+    display: 'grid',
+    gridTemplateColumns: '250px 1fr',
+    gridTemplateRows: 'auto 1fr',
+    height: '100vh',
+    fontFamily: "'Poppins', sans-serif",
+  },
+  loadingContainer: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: '100vh',
+  },
+  loader: {
+    fontSize: '20px',
+    color: '#879BFF',
+  },
+  header: {
+    gridColumn: '1 / -1',
+    background: '#879BFF',
+    color: 'white',
+    padding: '20px 30px',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
+    position: 'relative',
+  },
+  headerTitle: {
+    margin: 0,
+    fontSize: '24px',
+  },
+  userInfoContainer: {
+    position: 'relative',
+  },
+  userInfo: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    cursor: 'pointer',
+    padding: '8px 16px',
+    borderRadius: '5px',
+    transition: 'background 0.3s',
+  },
+  userName: {
+    fontSize: '16px',
+  },
+  dropdownArrow: {
+    fontSize: '12px',
+  },
+  userDropdown: {
+    position: 'absolute',
+    top: '100%',
+    right: 0,
+    marginTop: '10px',
+    background: 'white',
+    borderRadius: '8px',
+    boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+    minWidth: '200px',
+    zIndex: 1000,
+  },
+  dropdownItem: {
+    width: '100%',
+    padding: '12px 20px',
+    border: 'none',
+    background: 'none',
+    textAlign: 'left',
+    cursor: 'pointer',
+    fontSize: '14px',
+    color: '#2d3748',
+    transition: 'background 0.2s',
+  },
+  sidebar: {
+    background: '#879BFF',
+    color: 'white',
+    padding: '20px 0',
+  },
+  navMenu: {
+    listStyle: 'none',
+    padding: 0,
+    margin: 0,
+  },
+  navItem: {
+    margin: 0,
+  },
+  navLink: {
+    display: 'block',
+    padding: '15px 25px',
+    color: 'white',
+    textDecoration: 'none',
+    transition: 'all 0.3s',
+  },
+  navLinkActive: {
+    background: 'white',
+    color: '#879BFF',
+    fontWeight: 'bold',
+    borderLeft: '4px solid white',
+    paddingLeft: '21px',
+  },
+  mainContent: {
+    padding: '30px',
+    background: '#f7fafc',
+    overflowY: 'auto',
+  },
+  modalOverlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    background: 'rgba(0, 0, 0, 0.5)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1000,
+  },
+  modal: {
+    background: 'white',
+    borderRadius: '12px',
+    padding: '0',
+    width: '90%',
+    maxWidth: '500px',
+    maxHeight: '90vh',
+    overflowY: 'auto',
+    boxShadow: '0 10px 40px rgba(0,0,0,0.3)',
+  },
+  modalHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '24px 32px',
+    borderBottom: '1px solid #e2e8f0',
+  },
+  modalTitle: {
+    fontSize: '24px',
+    fontWeight: '600',
+    color: '#2d3748',
+    margin: 0,
+  },
+  closeButton: {
+    background: 'none',
+    border: 'none',
+    fontSize: '32px',
+    color: '#718096',
+    cursor: 'pointer',
+    padding: 0,
+    width: '32px',
+    height: '32px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: '4px',
+    transition: 'background 0.2s',
+  },
+  form: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '20px',
+    padding: '24px 32px',
+  },
+  formGroup: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+  },
+  label: {
+    fontSize: '14px',
+    fontWeight: '600',
+    color: '#4a5568',
+  },
+  input: {
+    padding: '10px 12px',
+    border: '1px solid #e2e8f0',
+    borderRadius: '6px',
+    fontSize: '14px',
+    outline: 'none',
+    transition: 'border-color 0.2s',
+  },
+  helpText: {
+    fontSize: '12px',
+    color: '#718096',
+  },
+  errorMessage: {
+    padding: '12px 16px',
+    background: '#fee',
+    color: '#c53030',
+    borderRadius: '6px',
+    fontSize: '14px',
+    border: '1px solid #fc8181',
+  },
+  formActions: {
+    display: 'flex',
+    gap: '12px',
+    justifyContent: 'flex-end',
+    marginTop: '8px',
+  },
+  primaryButton: {
+    background: 'linear-gradient(135deg, #879BFF 0%, #FF6495 100%)',
+    color: 'white',
+    border: 'none',
+    padding: '12px 24px',
+    borderRadius: '8px',
+    fontSize: '14px',
+    fontWeight: '600',
+    cursor: 'pointer',
+    transition: 'transform 0.2s',
+  },
+  secondaryButton: {
+    padding: '12px 24px',
+    border: '1px solid #e2e8f0',
+    background: 'white',
+    color: '#4a5568',
+    borderRadius: '8px',
+    fontSize: '14px',
+    fontWeight: '600',
+    cursor: 'pointer',
+  },
+};
