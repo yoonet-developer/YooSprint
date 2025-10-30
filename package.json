@@ -7,9 +7,11 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "seed": "node scripts/seed.js"
+    "seed": "node scripts/seed.js",
+    "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview"
   },
   "dependencies": {
+    "@opennextjs/cloudflare": "^1.6.5",
     "bcryptjs": "^2.4.3",
     "cookie": "^0.7.2",
     "dotenv": "^17.2.3",
@@ -29,6 +31,7 @@
     "@types/react-dom": "^18",
     "eslint": "^8",
     "eslint-config-next": "^15.0.0",
-    "typescript": "^5"
+    "typescript": "^5",
+    "wrangler": "^4.45.2"
   }
 }

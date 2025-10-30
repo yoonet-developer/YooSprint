@@ -4,11 +4,12 @@ import User from '@/lib/models/User';
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     await requireAuth(request);
-    const user = await User.findById(params.id).select('-password');
+    const { id } = await params;
+    const user = await User.findById(id).select('-password');
 
     if (!user) {
       return errorResponse('User not found', 404);
@@ -25,19 +26,20 @@ export async function GET(
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const currentUser = await requireAuth(request);
+    const { id } = await params;
     const body = await request.json();
 
     // Only admin can update other users
-    if (currentUser._id.toString() !== params.id && currentUser.role !== 'admin') {
+    if (currentUser._id.toString() !== id && currentUser.role !== 'admin') {
       return errorResponse('Not authorized to update this user', 403);
     }
 
     const user = await User.findByIdAndUpdate(
-      params.id,
+      id,
       body,
       { new: true, runValidators: true }
     ).select('-password');
@@ -57,17 +59,18 @@ export async function PUT(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const currentUser = await requireAuth(request);
+    const { id } = await params;
 
     // Only admin can delete users
     if (currentUser.role !== 'admin') {
       return errorResponse('Not authorized', 403);
     }
 
-    const user = await User.findByIdAndDelete(params.id);
+    const user = await User.findByIdAndDelete(id);
 
     if (!user) {
       return errorResponse('User not found', 404);

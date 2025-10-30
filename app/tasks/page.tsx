@@ -11,6 +11,12 @@ interface Backlog {
   project: string;
   storyPoints: number;
   taskStatus: 'pending' | 'in-progress' | 'completed';
+  assignee?: {
+    _id: string;
+    name: string;
+    email: string;
+    position: string;
+  };
   sprint?: {
     _id: string;
     name: string;

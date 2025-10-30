@@ -23,8 +23,15 @@ interface Backlog {
   _id: string;
   title: string;
   project: string;
+  status: 'backlog' | 'in-sprint' | 'done';
   taskStatus: string;
   createdAt: string;
+  assignee?: {
+    _id: string;
+    name: string;
+    email: string;
+    position: string;
+  };
 }
 
 export default function DashboardPage() {

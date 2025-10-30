@@ -374,7 +374,7 @@ export default function TimelinePage() {
                 const timeAgo = getTimeAgo(createdDate);
                 const fullDate = formatDateTime(backlog.createdAt);
 
-                const displayStatus = backlog.taskStatus || backlog.status || 'pending';
+                const displayStatus: string = backlog.taskStatus || backlog.status || 'pending';
                 let statusLabel = displayStatus.replace('-', ' ');
                 if (displayStatus === 'pending') {
                   statusLabel = 'to do';
@@ -477,7 +477,7 @@ export default function TimelinePage() {
     // Group backlogs by sprint
     const backlogsBySprint: { [key: string]: SprintGroup } = {};
     sortedBacklogs.forEach((backlog) => {
-      const sprintId = backlog.sprint?._id || backlog.sprint;
+      const sprintId = typeof backlog.sprint === 'string' ? backlog.sprint : backlog.sprint?._id;
       if (sprintId && !backlogsBySprint[sprintId]) {
         // Find the full sprint details from the sprints array
         const fullSprintDetails = sprints.find(s => s._id === sprintId);
@@ -590,7 +590,7 @@ export default function TimelinePage() {
               const timeAgo = getTimeAgo(createdDate);
               const fullDate = formatDateTime(backlog.createdAt);
 
-              const displayStatus = backlog.taskStatus || backlog.status || 'pending';
+              const displayStatus: string = backlog.taskStatus || backlog.status || 'pending';
               let statusLabel = displayStatus.replace('-', ' ');
               if (displayStatus === 'pending') {
                 statusLabel = 'to do';
@@ -1003,9 +1003,6 @@ const styles: { [key: string]: React.CSSProperties } = {
     background: 'rgba(255, 255, 255, 0.25)',
   },
   status_planned: {
-    background: 'rgba(255, 255, 255, 0.25)',
-  },
-  status_completed: {
     background: 'rgba(255, 255, 255, 0.25)',
   },
   info: {

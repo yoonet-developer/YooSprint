@@ -5,11 +5,12 @@ import Task from '@/lib/models/Task';
 // GET single task
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     await requireAuth(request);
-    const task = await Task.findById(params.id).populate('assignee', 'name email');
+    const { id } = await params;
+    const task = await Task.findById(id).populate('assignee', 'name email');
 
     if (!task) {
       return errorResponse('Task not found', 404);
@@ -28,14 +29,15 @@ export async function GET(
 // UPDATE task
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     await requireAuth(request);
+    const { id } = await params;
     const body = await request.json();
 
     const task = await Task.findByIdAndUpdate(
-      params.id,
+      id,
       body,
       { new: true, runValidators: true }
     ).populate('assignee', 'name email');
@@ -57,12 +59,13 @@ export async function PUT(
 // DELETE task
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     await requireAuth(request);
+    const { id } = await params;
 
-    const task = await Task.findByIdAndDelete(params.id);
+    const task = await Task.findByIdAndDelete(id);
 
     if (!task) {
       return errorResponse('Task not found', 404);

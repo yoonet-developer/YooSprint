@@ -481,7 +481,7 @@ export default function SprintsPage() {
                           key={backlog._id}
                           style={{
                             ...styles.backlogItem,
-                            borderBottom: index === sprint.backlogItems.length - 1 ? 'none' : '1px solid #e2e8f0',
+                            borderBottom: index === (sprint.backlogItems?.length ?? 0) - 1 ? 'none' : '1px solid #e2e8f0',
                           }}
                           onMouseEnter={(e) => e.currentTarget.style.background = '#f7fafc'}
                           onMouseLeave={(e) => e.currentTarget.style.background = 'white'}

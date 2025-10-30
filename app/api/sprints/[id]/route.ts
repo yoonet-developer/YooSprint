@@ -5,11 +5,12 @@ import Backlog from '@/lib/models/Backlog';
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     await requireAuth(request);
-    const sprint = await Sprint.findById(params.id)
+    const { id } = await params;
+    const sprint = await Sprint.findById(id)
       .populate('createdBy', 'name email')
       .populate('managers', 'name email position');
 
@@ -18,7 +19,7 @@ export async function GET(
     }
 
     // Fetch backlog items for this sprint
-    const backlogItems = await Backlog.find({ sprint: params.id })
+    const backlogItems = await Backlog.find({ sprint: id })
       .populate('assignee', 'name email position')
       .populate('createdBy', 'name email');
 
@@ -38,14 +39,15 @@ export async function GET(
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     await requireAuth(request);
+    const { id } = await params;
     const body = await request.json();
 
     const sprint = await Sprint.findByIdAndUpdate(
-      params.id,
+      id,
       body,
       { new: true, runValidators: true }
     ).populate('backlogItems');
@@ -65,12 +67,13 @@ export async function PUT(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     await requireAuth(request);
+    const { id } = await params;
 
-    const sprint = await Sprint.findByIdAndDelete(params.id);
+    const sprint = await Sprint.findByIdAndDelete(id);
 
     if (!sprint) {
       return errorResponse('Sprint not found', 404);
