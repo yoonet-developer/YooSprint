@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { useSearchParams } from 'next/navigation';
 import AppLayout from '@/components/shared/AppLayout';
 
 interface Backlog {
@@ -22,13 +23,17 @@ interface Backlog {
 }
 
 export default function TasksPage() {
+  const searchParams = useSearchParams();
+  const taskId = searchParams.get('taskId');
   const [tasks, setTasks] = useState<Backlog[]>([]);
   const [filteredTasks, setFilteredTasks] = useState<Backlog[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('todo');
   const [currentUserId, setCurrentUserId] = useState<string>('');
   const [currentPage, setCurrentPage] = useState(1);
+  const [highlightedTaskId, setHighlightedTaskId] = useState<string | null>(null);
   const itemsPerPage = 4;
+  const taskRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
 
   useEffect(() => {
     const userData = localStorage.getItem('user');
@@ -43,6 +48,39 @@ export default function TasksPage() {
     applyFilter();
     setCurrentPage(1); // Reset to page 1 when filter changes
   }, [tasks, filter]);
+
+  // Handle taskId parameter - scroll to and highlight specific task
+  useEffect(() => {
+    if (taskId && tasks.length > 0) {
+      // Find the task in all tasks
+      const task = tasks.find(t => t._id === taskId);
+      if (task) {
+        // Set the appropriate filter based on task status
+        const statusMap: { [key: string]: string } = {
+          'pending': 'todo',
+          'in-progress': 'in-progress',
+          'completed': 'completed',
+        };
+        setFilter(statusMap[task.taskStatus] || 'all');
+
+        // Highlight the task
+        setHighlightedTaskId(taskId);
+
+        // Wait for the DOM to update, then scroll to the task
+        setTimeout(() => {
+          const taskElement = taskRefs.current[taskId];
+          if (taskElement) {
+            taskElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+
+          // Remove highlight after 3 seconds
+          setTimeout(() => {
+            setHighlightedTaskId(null);
+          }, 3000);
+        }, 100);
+      }
+    }
+  }, [taskId, tasks]);
 
   const fetchMyTasks = async () => {
     try {
@@ -232,7 +270,14 @@ export default function TasksPage() {
             <div style={styles.empty}>No tasks found</div>
           ) : (
             paginatedTasks.map((task) => (
-              <div key={task._id} style={styles.taskCard}>
+              <div
+                key={task._id}
+                ref={(el) => { taskRefs.current[task._id] = el; }}
+                style={{
+                  ...styles.taskCard,
+                  ...(highlightedTaskId === task._id ? styles.highlightedCard : {}),
+                }}
+              >
                 <div style={styles.cardHeader}>
                   <h3 style={styles.cardTitle}>{task.title}</h3>
                   <div style={styles.badges}>
@@ -468,5 +513,10 @@ const styles: { [key: string]: React.CSSProperties } = {
     color: '#4a5568',
     fontWeight: '500',
     padding: '0 4px',
+  },
+  highlightedCard: {
+    border: '2px solid #FF6495',
+    boxShadow: '0 0 0 4px rgba(255, 100, 149, 0.2), 0 4px 12px rgba(0,0,0,0.15)',
+    animation: 'pulse 2s ease-in-out',
   },
 };
