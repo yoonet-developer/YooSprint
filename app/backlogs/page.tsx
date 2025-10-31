@@ -31,6 +31,7 @@ interface User {
   name: string;
   email: string;
   position: string;
+  role: string;
 }
 
 interface Sprint {
@@ -47,6 +48,7 @@ export default function BacklogsPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [sprints, setSprints] = useState<Sprint[]>([]);
   const [loading, setLoading] = useState(true);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [filter, setFilter] = useState('backlog');
   const [showModal, setShowModal] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
@@ -71,6 +73,12 @@ export default function BacklogsPage() {
   const [newProjectName, setNewProjectName] = useState('');
 
   useEffect(() => {
+    // Get current user from localStorage
+    const userData = localStorage.getItem('user');
+    if (userData) {
+      setCurrentUser(JSON.parse(userData));
+    }
+
     fetchBacklogs();
     fetchUsers();
     fetchSprints();
@@ -345,9 +353,11 @@ export default function BacklogsPage() {
       <div style={styles.container}>
         <div style={styles.header}>
           <h2 style={styles.title}>Product Backlogs</h2>
-          <button style={styles.primaryButton} onClick={openAddModal}>
-            + Add Backlog Item
-          </button>
+          {currentUser?.role !== 'member' && (
+            <button style={styles.primaryButton} onClick={openAddModal}>
+              + Add Backlog Item
+            </button>
+          )}
         </div>
 
         <div style={styles.filterRow}>
@@ -445,40 +455,42 @@ export default function BacklogsPage() {
                       <strong>Sprint:</strong> {backlog.sprint?.name || 'Not in sprint'}
                     </div>
                   </div>
-                  <div style={styles.cardActions}>
-                    {backlog.status === 'backlog' && sprints.length > 0 && (
-                      <select
-                        style={styles.sprintSelect}
-                        onChange={(e) => {
-                          if (e.target.value) {
-                            handleMoveToSprint(backlog._id, e.target.value);
-                          }
-                        }}
-                        defaultValue=""
-                      >
-                        <option value="" style={styles.selectOption}>Add to Sprint</option>
-                        {sprints.map((sprint) => (
-                          <option key={sprint._id} value={sprint._id} style={styles.selectOption}>
-                            {sprint.name}
-                          </option>
-                        ))}
-                      </select>
-                    )}
-                    {backlog.sprint && (
-                      <button
-                        style={styles.removeSprintButton}
-                        onClick={() => openRemoveConfirmModal(backlog)}
-                      >
-                        Remove from Sprint
+                  {currentUser?.role !== 'member' && (
+                    <div style={styles.cardActions}>
+                      {backlog.status === 'backlog' && sprints.length > 0 && (
+                        <select
+                          style={styles.sprintSelect}
+                          onChange={(e) => {
+                            if (e.target.value) {
+                              handleMoveToSprint(backlog._id, e.target.value);
+                            }
+                          }}
+                          defaultValue=""
+                        >
+                          <option value="" style={styles.selectOption}>Add to Sprint</option>
+                          {sprints.map((sprint) => (
+                            <option key={sprint._id} value={sprint._id} style={styles.selectOption}>
+                              {sprint.name}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                      {backlog.sprint && (
+                        <button
+                          style={styles.removeSprintButton}
+                          onClick={() => openRemoveConfirmModal(backlog)}
+                        >
+                          Remove from Sprint
+                        </button>
+                      )}
+                      <button style={styles.actionButton} onClick={() => handleEdit(backlog)}>
+                        Edit
                       </button>
-                    )}
-                    <button style={styles.actionButton} onClick={() => handleEdit(backlog)}>
-                      Edit
-                    </button>
-                    <button style={styles.deleteButton} onClick={() => handleDelete(backlog)}>
-                      Delete
-                    </button>
-                  </div>
+                      <button style={styles.deleteButton} onClick={() => handleDelete(backlog)}>
+                        Delete
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             ))

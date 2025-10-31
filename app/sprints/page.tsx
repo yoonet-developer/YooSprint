@@ -43,6 +43,7 @@ export default function SprintsPage() {
   const [backlogs, setBacklogs] = useState<Backlog[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [filter, setFilter] = useState('active');
   const [showModal, setShowModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -63,6 +64,12 @@ export default function SprintsPage() {
   });
 
   useEffect(() => {
+    // Get current user from localStorage
+    const userData = localStorage.getItem('user');
+    if (userData) {
+      setCurrentUser(JSON.parse(userData));
+    }
+
     fetchSprints();
     fetchBacklogs();
     fetchUsers();
@@ -373,9 +380,11 @@ export default function SprintsPage() {
       <div style={styles.container}>
         <div style={styles.header}>
           <h2 style={styles.title}>Sprints</h2>
-          <button style={styles.primaryButton} onClick={openAddModal}>
-            + Create Sprint
-          </button>
+          {currentUser?.role !== 'member' && (
+            <button style={styles.primaryButton} onClick={openAddModal}>
+              + Create Sprint
+            </button>
+          )}
         </div>
 
         <div style={styles.filterRow}>
@@ -451,12 +460,16 @@ export default function SprintsPage() {
                     >
                       {isExpanded ? '▼' : '▶'}
                     </button>
-                    <button style={styles.actionButton} onClick={() => handleEdit(sprint)}>
-                      Edit
-                    </button>
-                    <button style={styles.deleteButton} onClick={() => openDeleteModal(sprint)}>
-                      Delete
-                    </button>
+                    {currentUser?.role !== 'member' && (
+                      <>
+                        <button style={styles.actionButton} onClick={() => handleEdit(sprint)}>
+                          Edit
+                        </button>
+                        <button style={styles.deleteButton} onClick={() => openDeleteModal(sprint)}>
+                          Delete
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
 

@@ -66,17 +66,31 @@ export default function TasksPage() {
         // Highlight the task
         setHighlightedTaskId(taskId);
 
-        // Wait for the DOM to update, then scroll to the task
+        // Calculate which page the task is on after filtering
         setTimeout(() => {
-          const taskElement = taskRefs.current[taskId];
-          if (taskElement) {
-            taskElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          const statusKey = statusMap[task.taskStatus] || 'all';
+          const filtered = statusKey === 'all'
+            ? tasks
+            : tasks.filter(t => t.taskStatus === task.taskStatus);
+
+          const taskIndex = filtered.findIndex(t => t._id === taskId);
+          if (taskIndex !== -1) {
+            const correctPage = Math.floor(taskIndex / itemsPerPage) + 1;
+            setCurrentPage(correctPage);
           }
 
-          // Remove highlight after 3 seconds
+          // Wait for the DOM to update, then scroll to the task
           setTimeout(() => {
-            setHighlightedTaskId(null);
-          }, 3000);
+            const taskElement = taskRefs.current[taskId];
+            if (taskElement) {
+              taskElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+
+            // Remove highlight after 3 seconds
+            setTimeout(() => {
+              setHighlightedTaskId(null);
+            }, 3000);
+          }, 100);
         }, 100);
       }
     }
@@ -130,7 +144,7 @@ export default function TasksPage() {
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = startIndex + itemsPerPage;
   const paginatedTasks = filteredTasks.slice(startIndex, endIndex);
-  const showPagination = true; // Always show pagination
+  const showPagination = filteredTasks.length > itemsPerPage; // Only show pagination when more than 4 items
 
   const goToPage = (page: number) => {
     setCurrentPage(page);
@@ -384,9 +398,12 @@ const styles: { [key: string]: React.CSSProperties } = {
     outline: 'none',
   },
   tasksGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))',
+    display: 'flex',
+    flexDirection: 'column',
     gap: '20px',
+    maxHeight: 'calc(100vh - 350px)',
+    overflowY: 'auto',
+    paddingRight: '8px',
   },
   taskCard: {
     background: 'white',
