@@ -75,6 +75,8 @@ export default function DashboardPage() {
   const [backlogs, setBacklogs] = useState<Backlog[]>([]);
   const [tasksNearingDeadline, setTasksNearingDeadline] = useState<TaskNearingDeadline[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deadlineTasksPage, setDeadlineTasksPage] = useState(1);
+  const deadlineTasksPerPage = 4;
 
   useEffect(() => {
     const userData = localStorage.getItem('user');
@@ -131,8 +133,13 @@ export default function DashboardPage() {
         // Filter backlogs based on user role
         let filteredBacklogs: Backlog[];
         if (isTeamMember) {
-          // Team members see only their assigned backlogs
-          filteredBacklogs = backlogs.filter((b: Backlog) => b.assignee?._id === user?.id);
+          // Team members see only their assigned backlogs in active or completed sprints
+          filteredBacklogs = backlogs.filter(
+            (b: Backlog) =>
+              b.assignee?._id === user?.id &&
+              b.sprint &&
+              (b.sprint.status === 'active' || b.sprint.status === 'completed')
+          );
         } else if (isManager) {
           // Managers see only backlogs from their managed sprints
           filteredBacklogs = backlogs.filter((b: Backlog) =>
@@ -163,6 +170,11 @@ export default function DashboardPage() {
 
         const isAdminOrManager = isAdmin || isManager;
 
+        // For team members, calculate active tasks (pending + in-progress)
+        const activeTasks = isTeamMember
+          ? filteredBacklogs.filter((b: Backlog) => b.taskStatus === 'pending' || b.taskStatus === 'in-progress').length
+          : 0;
+
         setStats({
           totalProjects: projects.size,
           activeSprints,
@@ -174,7 +186,7 @@ export default function DashboardPage() {
             teamMembers: filteredUsers.length,
           }),
           ...(isTeamMember && {
-            totalTasks: filteredBacklogs.length,
+            totalTasks: activeTasks,
             completedTasks: completedBacklogs,
           }),
         });
@@ -262,7 +274,36 @@ export default function DashboardPage() {
         {/* Tasks Nearing Sprint End Date */}
         {(user.role === 'admin' || user.role === 'manager') && (
           <div style={styles.deadlineSection}>
-            <h2 style={styles.sectionTitle}>Tasks Nearing Sprint End</h2>
+            <div style={styles.sectionHeader}>
+              <h2 style={styles.sectionTitle}>Tasks Nearing Sprint End</h2>
+              {tasksNearingDeadline.length > deadlineTasksPerPage && (
+                <div style={styles.paginationContainer}>
+                  <button
+                    style={{
+                      ...styles.paginationButton,
+                      ...(deadlineTasksPage === 1 ? styles.paginationButtonDisabled : {}),
+                    }}
+                    onClick={() => setDeadlineTasksPage(deadlineTasksPage - 1)}
+                    disabled={deadlineTasksPage === 1}
+                  >
+                    ‹
+                  </button>
+                  <span style={styles.paginationInfo}>
+                    {deadlineTasksPage} / {Math.ceil(tasksNearingDeadline.length / deadlineTasksPerPage)}
+                  </span>
+                  <button
+                    style={{
+                      ...styles.paginationButton,
+                      ...(deadlineTasksPage === Math.ceil(tasksNearingDeadline.length / deadlineTasksPerPage) ? styles.paginationButtonDisabled : {}),
+                    }}
+                    onClick={() => setDeadlineTasksPage(deadlineTasksPage + 1)}
+                    disabled={deadlineTasksPage === Math.ceil(tasksNearingDeadline.length / deadlineTasksPerPage)}
+                  >
+                    ›
+                  </button>
+                </div>
+              )}
+            </div>
             {tasksNearingDeadline.length === 0 ? (
               <div style={styles.emptyDeadlineCard}>
                 <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" fill="currentColor" viewBox="0 0 16 16" style={{ marginBottom: '16px', color: '#a0aec0' }}>
@@ -273,7 +314,9 @@ export default function DashboardPage() {
               </div>
             ) : (
               <div style={styles.deadlineGrid}>
-                {tasksNearingDeadline.map((task) => {
+                {tasksNearingDeadline
+                  .slice((deadlineTasksPage - 1) * deadlineTasksPerPage, deadlineTasksPage * deadlineTasksPerPage)
+                  .map((task) => {
                   const isUrgent = task.daysUntilEnd <= 3;
                   return (
                     <div
@@ -332,152 +375,156 @@ export default function DashboardPage() {
             {/* Tasks Nearing Deadline (3 days) */}
             <div style={styles.teamMemberTaskSection}>
               <h2 style={styles.sectionTitle}>Tasks Nearing Deadline</h2>
-              <div style={styles.scrollableTaskContainer}>
-                {tasksNearingDeadline.length === 0 ? (
-                  <div style={styles.emptyDeadlineCard}>
-                    <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" fill="currentColor" viewBox="0 0 16 16" style={{ marginBottom: '16px', color: '#a0aec0' }}>
-                      <path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0M8 4a.905.905 0 0 0-.9.995l.35 3.507a.552.552 0 0 0 1.1 0l.35-3.507A.905.905 0 0 0 8 4m.002 6a1 1 0 1 0 0 2 1 1 0 0 0 0-2"/>
-                    </svg>
-                    <p style={styles.emptyDeadlineText}>No tasks nearing deadline within 3 days</p>
-                    <p style={styles.emptyDeadlineSubtext}>Great job! Keep up the good work!</p>
-                  </div>
-                ) : (
-                  <div style={styles.deadlineListVertical}>
-                    {tasksNearingDeadline.map((task) => {
-                      const isUrgent = task.daysUntilEnd <= 1;
-                      return (
-                        <Link
-                          key={task.backlog._id}
-                          href={`/tasks?taskId=${task.backlog._id}`}
-                          style={{ textDecoration: 'none', color: 'inherit' }}
-                        >
-                          <div
-                            style={{
-                              ...styles.deadlineCard,
-                              borderLeft: `4px solid ${isUrgent ? '#f56565' : '#ed8936'}`,
-                            }}
+              <div style={styles.teamMemberTasksBackground}>
+                <div style={styles.scrollableTaskContainer}>
+                  {tasksNearingDeadline.length === 0 ? (
+                    <div style={styles.emptyTaskListInline}>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" fill="currentColor" viewBox="0 0 16 16" style={{ marginBottom: '16px', color: '#a0aec0' }}>
+                        <path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0M8 4a.905.905 0 0 0-.9.995l.35 3.507a.552.552 0 0 0 1.1 0l.35-3.507A.905.905 0 0 0 8 4m.002 6a1 1 0 1 0 0 2 1 1 0 0 0 0-2"/>
+                      </svg>
+                      <p style={styles.emptyDeadlineText}>No tasks nearing deadline within 3 days</p>
+                      <p style={styles.emptyDeadlineSubtext}>Great job! Keep up the good work!</p>
+                    </div>
+                  ) : (
+                    <div style={styles.deadlineListVertical}>
+                      {tasksNearingDeadline.map((task) => {
+                        const isUrgent = task.daysUntilEnd <= 1;
+                        return (
+                          <Link
+                            key={task.backlog._id}
+                            href={`/tasks?taskId=${task.backlog._id}`}
+                            style={{ textDecoration: 'none', color: 'inherit' }}
                           >
-                            <div style={styles.deadlineCardHeader}>
-                              <h3 style={styles.deadlineCardTitle}>{task.backlog.title}</h3>
-                              <span
-                                style={{
-                                  ...styles.deadlineBadge,
-                                  backgroundColor: isUrgent ? '#f56565' : '#ed8936',
-                                }}
-                              >
-                                {task.daysUntilEnd === 0
-                                  ? 'Today'
-                                  : task.daysUntilEnd === 1
-                                  ? '1 day'
-                                  : `${task.daysUntilEnd} days`}
-                              </span>
-                            </div>
-                            <div style={styles.deadlineCardMeta}>
-                              <div style={styles.deadlineMetaItem}>
-                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" style={{ marginRight: '6px', verticalAlign: 'middle' }}>
-                                  <path d="M2.5 15a.5.5 0 1 1 0-1h1v-1a4.5 4.5 0 0 1 2.557-4.06c.29-.139.443-.377.443-.59v-.7c0-.213-.154-.451-.443-.59A4.5 4.5 0 0 1 3.5 3V2h-1a.5.5 0 0 1 0-1h11a.5.5 0 0 1 0 1h-1v1a4.5 4.5 0 0 1-2.557 4.06c-.29.139-.443.377-.443.59v.7c0 .213.154.451.443.59A4.5 4.5 0 0 1 12.5 13v1h1a.5.5 0 0 1 0 1zm2-13v1c0 .537.12 1.045.337 1.5h6.326c.216-.455.337-.963.337-1.5V2zm3 6.35c0 .701-.478 1.236-1.011 1.492A3.5 3.5 0 0 0 4.5 13s.866-1.299 3-1.48zm1 0v3.17c2.134.181 3 1.48 3 1.48a3.5 3.5 0 0 0-1.989-3.158C8.978 9.586 8.5 9.052 8.5 8.351z"/>
-                                </svg>
-                                <strong>Sprint:</strong> {task.backlog.sprint?.name}
+                            <div
+                              style={{
+                                ...styles.deadlineCard,
+                                borderLeft: `4px solid ${isUrgent ? '#f56565' : '#ed8936'}`,
+                              }}
+                            >
+                              <div style={styles.deadlineCardHeader}>
+                                <h3 style={styles.deadlineCardTitle}>{task.backlog.title}</h3>
+                                <span
+                                  style={{
+                                    ...styles.deadlineBadge,
+                                    backgroundColor: isUrgent ? '#f56565' : '#ed8936',
+                                  }}
+                                >
+                                  {task.daysUntilEnd === 0
+                                    ? 'Today'
+                                    : task.daysUntilEnd === 1
+                                    ? '1 day'
+                                    : `${task.daysUntilEnd} days`}
+                                </span>
                               </div>
-                              <div style={styles.deadlineMetaItem}>
-                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" style={{ marginRight: '6px', verticalAlign: 'middle' }}>
-                                  <path d="M8.186 1.113a.5.5 0 0 0-.372 0L1.846 3.5 8 5.961 14.154 3.5zM15 4.239l-6.5 2.6v7.922l6.5-2.6V4.24zM7.5 14.762V6.838L1 4.239v7.923zM7.443.184a1.5 1.5 0 0 1 1.114 0l7.129 2.852A.5.5 0 0 1 16 3.5v8.662a1 1 0 0 1-.629.928l-7.185 2.874a.5.5 0 0 1-.372 0L.63 13.09a1 1 0 0 1-.63-.928V3.5a.5.5 0 0 1 .314-.464z"/>
-                                </svg>
-                                <strong>Project:</strong> {task.backlog.project}
+                              <div style={styles.deadlineCardMeta}>
+                                <div style={styles.deadlineMetaItem}>
+                                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" style={{ marginRight: '6px', verticalAlign: 'middle' }}>
+                                    <path d="M2.5 15a.5.5 0 1 1 0-1h1v-1a4.5 4.5 0 0 1 2.557-4.06c.29-.139.443-.377.443-.59v-.7c0-.213-.154-.451-.443-.59A4.5 4.5 0 0 1 3.5 3V2h-1a.5.5 0 0 1 0-1h11a.5.5 0 0 1 0 1h-1v1a4.5 4.5 0 0 1-2.557 4.06c-.29.139-.443.377-.443.59v.7c0 .213.154.451.443.59A4.5 4.5 0 0 1 12.5 13v1h1a.5.5 0 0 1 0 1zm2-13v1c0 .537.12 1.045.337 1.5h6.326c.216-.455.337-.963.337-1.5V2zm3 6.35c0 .701-.478 1.236-1.011 1.492A3.5 3.5 0 0 0 4.5 13s.866-1.299 3-1.48zm1 0v3.17c2.134.181 3 1.48 3 1.48a3.5 3.5 0 0 0-1.989-3.158C8.978 9.586 8.5 9.052 8.5 8.351z"/>
+                                  </svg>
+                                  <strong>Sprint:</strong> {task.backlog.sprint?.name}
+                                </div>
+                                <div style={styles.deadlineMetaItem}>
+                                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" style={{ marginRight: '6px', verticalAlign: 'middle' }}>
+                                    <path d="M8.186 1.113a.5.5 0 0 0-.372 0L1.846 3.5 8 5.961 14.154 3.5zM15 4.239l-6.5 2.6v7.922l6.5-2.6V4.24zM7.5 14.762V6.838L1 4.239v7.923zM7.443.184a1.5 1.5 0 0 1 1.114 0l7.129 2.852A.5.5 0 0 1 16 3.5v8.662a1 1 0 0 1-.629.928l-7.185 2.874a.5.5 0 0 1-.372 0L.63 13.09a1 1 0 0 1-.63-.928V3.5a.5.5 0 0 1 .314-.464z"/>
+                                  </svg>
+                                  <strong>Project:</strong> {task.backlog.project}
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        </Link>
-                      );
-                    })}
-                  </div>
-                )}
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
             {/* My Tasks Overview */}
             <div style={styles.teamMemberTaskSection}>
               <h2 style={styles.sectionTitle}>My Tasks</h2>
-              <div style={styles.scrollableTaskContainer}>
-                {(() => {
-                  // Filter for only pending and in-progress tasks
-                  const activeTasks = backlogs.filter(
-                    (b) => b.taskStatus === 'pending' || b.taskStatus === 'in-progress'
-                  );
-
-                  if (activeTasks.length === 0) {
-                    return (
-                      <div style={styles.emptyTaskList}>
-                        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" fill="currentColor" viewBox="0 0 16 16" style={{ marginBottom: '16px', color: '#a0aec0' }}>
-                          <path d="M10.854 7.146a.5.5 0 0 1 0 .708l-3 3a.5.5 0 0 1-.708 0l-1.5-1.5a.5.5 0 1 1 .708-.708L7.5 9.793l2.646-2.647a.5.5 0 0 1 .708 0"/>
-                          <path d="M14 14V4.5L9.5 0H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2M9.5 3A1.5 1.5 0 0 0 11 4.5h2V14a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h5.5z"/>
-                        </svg>
-                        <p style={styles.emptyDeadlineText}>No pending or in-progress tasks</p>
-                        <p style={styles.emptyDeadlineSubtext}>You're all caught up!</p>
-                      </div>
+              <div style={styles.teamMemberTasksBackground}>
+                <div style={styles.scrollableTaskContainer}>
+                  {(() => {
+                    // Filter for only pending and in-progress tasks
+                    const activeTasks = backlogs.filter(
+                      (b) => b.taskStatus === 'pending' || b.taskStatus === 'in-progress'
                     );
-                  }
 
-                  return (
-                    <div style={styles.taskListContainer}>
-                      {activeTasks.map((backlog) => (
-                        <Link
-                          key={backlog._id}
-                          href={`/tasks?taskId=${backlog._id}`}
-                          style={{ textDecoration: 'none', color: 'inherit' }}
-                        >
-                          <div
-                            style={styles.taskListItem}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
-                              e.currentTarget.style.transform = 'translateY(-2px)';
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)';
-                              e.currentTarget.style.transform = 'translateY(0)';
-                            }}
+                    if (activeTasks.length === 0) {
+                      return (
+                        <div style={styles.emptyTaskListInline}>
+                          <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" fill="currentColor" viewBox="0 0 16 16" style={{ marginBottom: '16px', color: '#a0aec0' }}>
+                            <path d="M10.854 7.146a.5.5 0 0 1 0 .708l-3 3a.5.5 0 0 1-.708 0l-1.5-1.5a.5.5 0 1 1 .708-.708L7.5 9.793l2.646-2.647a.5.5 0 0 1 .708 0"/>
+                            <path d="M14 14V4.5L9.5 0H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2M9.5 3A1.5 1.5 0 0 0 11 4.5h2V14a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h5.5z"/>
+                          </svg>
+                          <p style={styles.emptyDeadlineText}>No pending or in-progress tasks</p>
+                          <p style={styles.emptyDeadlineSubtext}>You're all caught up!</p>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div style={styles.taskListContainer}>
+                        {activeTasks.map((backlog) => (
+                          <Link
+                            key={backlog._id}
+                            href={`/tasks?taskId=${backlog._id}`}
+                            style={{ textDecoration: 'none', color: 'inherit' }}
                           >
-                            <div style={styles.taskListItemLeft}>
-                              <div style={{
-                                ...styles.taskStatusIndicator,
-                                backgroundColor: backlog.taskStatus === 'in-progress' ? '#4299e1' : '#718096'
-                              }}></div>
-                              <div style={styles.taskListItemContent}>
-                                <h3 style={styles.taskListItemTitle}>{backlog.title}</h3>
-                                <div style={styles.taskListItemMeta}>
-                                  <span style={styles.taskListItemMetaText}>
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16" style={{ marginRight: '4px', verticalAlign: 'middle' }}>
-                                      <path d="M8.186 1.113a.5.5 0 0 0-.372 0L1.846 3.5 8 5.961 14.154 3.5zM15 4.239l-6.5 2.6v7.922l6.5-2.6V4.24zM7.5 14.762V6.838L1 4.239v7.923zM7.443.184a1.5 1.5 0 0 1 1.114 0l7.129 2.852A.5.5 0 0 1 16 3.5v8.662a1 1 0 0 1-.629.928l-7.185 2.874a.5.5 0 0 1-.372 0L.63 13.09a1 1 0 0 1-.63-.928V3.5a.5.5 0 0 1 .314-.464z"/>
-                                    </svg>
-                                    {backlog.project}
-                                  </span>
-                                  {backlog.sprint && (
+                            <div
+                              style={styles.taskListItem}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
+                                e.currentTarget.style.transform = 'translateY(-2px)';
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)';
+                                e.currentTarget.style.transform = 'translateY(0)';
+                              }}
+                            >
+                              <div style={styles.taskListItemLeft}>
+                                <div style={{
+                                  ...styles.taskStatusIndicator,
+                                  backgroundColor: backlog.taskStatus === 'in-progress' ? '#4299e1' : '#718096'
+                                }}></div>
+                                <div style={styles.taskListItemContent}>
+                                  <h3 style={styles.taskListItemTitle}>{backlog.title}</h3>
+                                  <div style={styles.taskListItemMeta}>
                                     <span style={styles.taskListItemMetaText}>
                                       <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16" style={{ marginRight: '4px', verticalAlign: 'middle' }}>
-                                        <path d="M2.5 15a.5.5 0 1 1 0-1h1v-1a4.5 4.5 0 0 1 2.557-4.06c.29-.139.443-.377.443-.59v-.7c0-.213-.154-.451-.443-.59A4.5 4.5 0 0 1 3.5 3V2h-1a.5.5 0 0 1 0-1h11a.5.5 0 0 1 0 1h-1v1a4.5 4.5 0 0 1-2.557 4.06c-.29.139-.443.377-.443.59v.7c0 .213.154.451.443.59A4.5 4.5 0 0 1 12.5 13v1h1a.5.5 0 0 1 0 1zm2-13v1c0 .537.12 1.045.337 1.5h6.326c.216-.455.337-.963.337-1.5V2zm3 6.35c0 .701-.478 1.236-1.011 1.492A3.5 3.5 0 0 0 4.5 13s.866-1.299 3-1.48zm1 0v3.17c2.134.181 3 1.48 3 1.48a3.5 3.5 0 0 0-1.989-3.158C8.978 9.586 8.5 9.052 8.5 8.351z"/>
+                                        <path d="M8.186 1.113a.5.5 0 0 0-.372 0L1.846 3.5 8 5.961 14.154 3.5zM15 4.239l-6.5 2.6v7.922l6.5-2.6V4.24zM7.5 14.762V6.838L1 4.239v7.923zM7.443.184a1.5 1.5 0 0 1 1.114 0l7.129 2.852A.5.5 0 0 1 16 3.5v8.662a1 1 0 0 1-.629.928l-7.185 2.874a.5.5 0 0 1-.372 0L.63 13.09a1 1 0 0 1-.63-.928V3.5a.5.5 0 0 1 .314-.464z"/>
                                       </svg>
-                                      {backlog.sprint.name}
+                                      {backlog.project}
                                     </span>
-                                  )}
+                                    {backlog.sprint && (
+                                      <span style={styles.taskListItemMetaText}>
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16" style={{ marginRight: '4px', verticalAlign: 'middle' }}>
+                                          <path d="M2.5 15a.5.5 0 1 1 0-1h1v-1a4.5 4.5 0 0 1 2.557-4.06c.29-.139.443-.377.443-.59v-.7c0-.213-.154-.451-.443-.59A4.5 4.5 0 0 1 3.5 3V2h-1a.5.5 0 0 1 0-1h11a.5.5 0 0 1 0 1h-1v1a4.5 4.5 0 0 1-2.557 4.06c-.29.139-.443.377-.443.59v.7c0 .213.154.451.443.59A4.5 4.5 0 0 1 12.5 13v1h1a.5.5 0 0 1 0 1zm2-13v1c0 .537.12 1.045.337 1.5h6.326c.216-.455.337-.963.337-1.5V2zm3 6.35c0 .701-.478 1.236-1.011 1.492A3.5 3.5 0 0 0 4.5 13s.866-1.299 3-1.48zm1 0v3.17c2.134.181 3 1.48 3 1.48a3.5 3.5 0 0 0-1.989-3.158C8.978 9.586 8.5 9.052 8.5 8.351z"/>
+                                        </svg>
+                                        {backlog.sprint.name}
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
+                              <div style={styles.taskListItemRight}>
+                                <span
+                                  style={{
+                                    ...styles.taskStatusBadgeSmall,
+                                    backgroundColor: backlog.taskStatus === 'in-progress' ? '#4299e1' : '#718096',
+                                  }}
+                                >
+                                  {backlog.taskStatus.replace('-', ' ')}
+                                </span>
+                              </div>
                             </div>
-                            <div style={styles.taskListItemRight}>
-                              <span
-                                style={{
-                                  ...styles.taskStatusBadgeSmall,
-                                  backgroundColor: backlog.taskStatus === 'in-progress' ? '#4299e1' : '#718096',
-                                }}
-                              >
-                                {backlog.taskStatus.replace('-', ' ')}
-                              </span>
-                            </div>
-                          </div>
-                        </Link>
-                      ))}
-                    </div>
-                  );
-                })()}
+                          </Link>
+                        ))}
+                      </div>
+                    );
+                  })()}
+                </div>
               </div>
             </div>
           </div>
@@ -755,8 +802,17 @@ const styles: { [key: string]: React.CSSProperties } = {
     flexDirection: 'column',
     minHeight: 0,
   },
+  teamMemberTasksBackground: {
+    background: 'white',
+    borderRadius: '10px',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+    padding: '20px',
+    height: '500px',
+    display: 'flex',
+    flexDirection: 'column',
+  },
   scrollableTaskContainer: {
-    maxHeight: '600px',
+    flex: 1,
     overflowY: 'auto',
     overflowX: 'hidden',
     paddingRight: '4px',
@@ -853,5 +909,46 @@ const styles: { [key: string]: React.CSSProperties } = {
     flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  emptyTaskListInline: {
+    textAlign: 'center',
+    padding: '40px 20px',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sectionHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '20px',
+  },
+  paginationContainer: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+  },
+  paginationButton: {
+    padding: '6px 12px',
+    border: '1px solid #e2e8f0',
+    background: 'white',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontSize: '16px',
+    color: '#4a5568',
+    transition: 'all 0.2s',
+    fontWeight: '600',
+    minWidth: '36px',
+  },
+  paginationButtonDisabled: {
+    opacity: 0.3,
+    cursor: 'not-allowed',
+  },
+  paginationInfo: {
+    fontSize: '14px',
+    color: '#4a5568',
+    fontWeight: '500',
+    padding: '0 4px',
   },
 };
