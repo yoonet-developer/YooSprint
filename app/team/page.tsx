@@ -117,7 +117,7 @@ export default function TeamPage() {
         setEditingUser(null);
         fetchUsers();
       } else {
-        alert(data.message || 'Error updating member');
+        alert(data.message || 'Error updating membefr');
       }
     } catch (error) {
       console.error('Error updating member:', error);
