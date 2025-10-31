@@ -117,7 +117,7 @@ export default function SprintsPage() {
       });
       const data = await response.json();
       if (data.success) {
-        setBacklogs(data.backlogs.filter((b: Backlog) => b.taskStatus !== 'completed'));
+        setBacklogs(data.backlogs);
       }
     } catch (error) {
       console.error('Error fetching backlogs:', error);
@@ -323,6 +323,7 @@ export default function SprintsPage() {
   const getFilteredBacklogs = () => {
     return backlogs
       .filter(b => b.taskStatus !== 'in-sprint' || (editingSprint && editingSprint.backlogItems?.some(item => item._id === b._id)))
+      .filter(b => b.taskStatus !== 'completed') // Exclude completed backlogs
       .filter(b =>
         backlogSearch === '' ||
         b.title.toLowerCase().includes(backlogSearch.toLowerCase()) ||
@@ -344,9 +345,9 @@ export default function SprintsPage() {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'active': return '#48bb78';
+      case 'active': return '#FF6495';
       case 'planned': return '#4299e1';
-      case 'completed': return '#718096';
+      case 'completed': return '#48bb78';
       default: return '#718096';
     }
   };
@@ -520,7 +521,9 @@ export default function SprintsPage() {
                                       ? '#CDE5F380'
                                       : '#718096',
                                   color:
-                                    backlog.taskStatus === 'in-progress'
+                                    backlog.taskStatus === 'completed'
+                                      ? 'white'
+                                      : backlog.taskStatus === 'in-progress'
                                       ? '#879BFF'
                                       : 'white',
                                 }}
@@ -535,11 +538,17 @@ export default function SprintsPage() {
                           <div style={styles.backlogItemMeta}>
                             {backlog.assignee && (
                               <span style={styles.backlogMetaText}>
-                                👤 {backlog.assignee.name}
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" style={{ marginRight: '4px', verticalAlign: 'middle' }}>
+                                  <path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6m2-3a2 2 0 1 1-4 0 2 2 0 0 1 4 0m4 8c0 1-1 1-1 1H3s-1 0-1-1 1-4 6-4 6 3 6 4m-1-.004c-.001-.246-.154-.986-.832-1.664C11.516 10.68 10.289 10 8 10s-3.516.68-4.168 1.332c-.678.678-.83 1.418-.832 1.664z"/>
+                                </svg>
+                                {backlog.assignee.name}
                               </span>
                             )}
                             <span style={styles.backlogMetaText}>
-                              📦 {backlog.project}
+                              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" style={{ marginRight: '4px', verticalAlign: 'middle' }}>
+                                <path d="M8.186 1.113a.5.5 0 0 0-.372 0L1.846 3.5 8 5.961 14.154 3.5zM15 4.239l-6.5 2.6v7.922l6.5-2.6V4.24zM7.5 14.762V6.838L1 4.239v7.923zM7.443.184a1.5 1.5 0 0 1 1.114 0l7.129 2.852A.5.5 0 0 1 16 3.5v8.662a1 1 0 0 1-.629.928l-7.185 2.874a.5.5 0 0 1-.372 0L.63 13.09a1 1 0 0 1-.63-.928V3.5a.5.5 0 0 1 .314-.464z"/>
+                              </svg>
+                              {backlog.project}
                             </span>
                           </div>
                         </div>
@@ -684,10 +693,10 @@ export default function SprintsPage() {
                             <div style={styles.backlogOptionTitle}>{user.name}</div>
                             <div style={styles.backlogOptionMeta}>
                               <span style={styles.backlogOptionProject}>
-                                📧 {user.email}
-                              </span>
-                              <span style={styles.backlogOptionProject}>
-                                💼 {user.position}
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" style={{ marginRight: '4px', verticalAlign: 'middle' }}>
+                                  <path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6m2-3a2 2 0 1 1-4 0 2 2 0 0 1 4 0m4 8c0 1-1 1-1 1H3s-1 0-1-1 1-4 6-4 6 3 6 4m-1-.004c-.001-.246-.154-.986-.832-1.664C11.516 10.68 10.289 10 8 10s-3.516.68-4.168 1.332c-.678.678-.83 1.418-.832 1.664z"/>
+                                </svg>
+                                {user.role}
                               </span>
                             </div>
                           </div>
@@ -738,7 +747,12 @@ export default function SprintsPage() {
                           <div style={styles.backlogOptionContent}>
                             <div style={styles.backlogOptionTitle}>{backlog.title}</div>
                             <div style={styles.backlogOptionMeta}>
-                              <span style={styles.backlogOptionProject}>📦 {backlog.project}</span>
+                              <span style={styles.backlogOptionProject}>
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" style={{ marginRight: '4px', verticalAlign: 'middle' }}>
+                                  <path d="M8.186 1.113a.5.5 0 0 0-.372 0L1.846 3.5 8 5.961 14.154 3.5zM15 4.239l-6.5 2.6v7.922l6.5-2.6V4.24zM7.5 14.762V6.838L1 4.239v7.923zM7.443.184a1.5 1.5 0 0 1 1.114 0l7.129 2.852A.5.5 0 0 1 16 3.5v8.662a1 1 0 0 1-.629.928l-7.185 2.874a.5.5 0 0 1-.372 0L.63 13.09a1 1 0 0 1-.63-.928V3.5a.5.5 0 0 1 .314-.464z"/>
+                                </svg>
+                                {backlog.project}
+                              </span>
                               <span
                                 style={{
                                   ...styles.priorityBadge,

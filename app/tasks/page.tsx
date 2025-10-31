@@ -57,12 +57,12 @@ export default function TasksPage() {
         const userData = localStorage.getItem('user');
         if (userData) {
           const user = JSON.parse(userData);
-          // Filter backlogs assigned to current user and in active sprints
+          // Filter backlogs assigned to current user in active or completed sprints
           const myTasks = data.backlogs.filter(
             (b: Backlog) =>
               b.assignee?._id === user.id &&
               b.sprint &&
-              b.sprint.status === 'active'
+              (b.sprint.status === 'active' || b.sprint.status === 'completed')
           );
           setTasks(myTasks);
         }

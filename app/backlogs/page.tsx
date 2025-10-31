@@ -140,6 +140,12 @@ export default function BacklogsPage() {
   const applyFilter = () => {
     if (filter === 'all') {
       setFilteredBacklogs(backlogs);
+    } else if (filter === 'done') {
+      // Show items where status is 'done' OR taskStatus is 'completed'
+      setFilteredBacklogs(backlogs.filter(b => b.status === 'done' || b.taskStatus === 'completed'));
+    } else if (filter === 'in-sprint') {
+      // Show items in sprint that are NOT completed
+      setFilteredBacklogs(backlogs.filter(b => b.status === 'in-sprint' && b.taskStatus !== 'completed'));
     } else {
       setFilteredBacklogs(backlogs.filter(b => b.status === filter));
     }
@@ -409,18 +415,20 @@ export default function BacklogsPage() {
                     style={{
                       ...styles.statusBadge,
                       backgroundColor:
-                        backlog.status === 'done'
+                        backlog.status === 'done' || backlog.taskStatus === 'completed'
                           ? '#48bb78'
                           : backlog.status === 'in-sprint'
                           ? '#CDE5F380'
                           : '#718096',
                       color:
-                        backlog.status === 'in-sprint'
+                        (backlog.status === 'done' || backlog.taskStatus === 'completed')
+                          ? 'white'
+                          : backlog.status === 'in-sprint'
                           ? '#879BFF'
                           : 'white',
                     }}
                   >
-                    {backlog.status === 'done' ? 'completed' : backlog.status.replace('-', ' ')}
+                    {backlog.status === 'done' || backlog.taskStatus === 'completed' ? 'completed' : backlog.status.replace('-', ' ')}
                   </span>
                 </div>
 

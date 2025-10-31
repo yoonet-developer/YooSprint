@@ -38,6 +38,7 @@ interface Sprint {
   startDate: string;
   endDate: string;
   status: 'planned' | 'active' | 'completed';
+  managers?: Array<{ _id: string; name: string; email: string }>;
 }
 
 interface SprintGroup {
@@ -57,6 +58,8 @@ export default function TimelinePage() {
   const [projectFilter, setProjectFilter] = useState('all');
   const [expandedProjects, setExpandedProjects] = useState<{ [key: string]: boolean }>({});
   const [expandedSprints, setExpandedSprints] = useState<{ [key: string]: boolean }>({});
+  const [currentUserId, setCurrentUserId] = useState<string>('');
+  const [userRole, setUserRole] = useState<string>('');
 
   useEffect(() => {
     fetchData();
@@ -72,6 +75,14 @@ export default function TimelinePage() {
   const fetchData = async () => {
     try {
       const token = localStorage.getItem('token');
+
+      // Get current user ID and role
+      const userData = localStorage.getItem('user');
+      if (userData) {
+        const user = JSON.parse(userData);
+        setCurrentUserId(user.id);
+        setUserRole(user.role);
+      }
 
       // Fetch backlogs
       const backlogsRes = await fetch('/api/backlogs', {
@@ -89,7 +100,20 @@ export default function TimelinePage() {
         setBacklogs(backlogsData.backlogs);
       }
       if (sprintsData.success) {
-        setSprints(sprintsData.sprints);
+        // Fetch detailed sprint info with managers populated
+        const sprintsWithDetails = await Promise.all(
+          sprintsData.sprints.map(async (sprint: Sprint) => {
+            const detailsRes = await fetch(`/api/sprints/${sprint._id}`, {
+              headers: { 'Authorization': `Bearer ${token}` },
+            });
+            const detailsData = await detailsRes.json();
+            if (detailsData.success) {
+              return detailsData.sprint;
+            }
+            return sprint;
+          })
+        );
+        setSprints(sprintsWithDetails);
       }
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -209,8 +233,25 @@ export default function TimelinePage() {
   };
 
   const renderProjectTimeline = () => {
-    // Show all backlogs, not just ongoing ones
-    let filteredBacklogs = backlogs;
+    // Filter sprints: admins see all, managers see only their sprints
+    const managedSprints = userRole === 'admin'
+      ? sprints
+      : sprints.filter((sprint) => {
+          if (!sprint.managers || sprint.managers.length === 0) return false;
+          return sprint.managers.some((manager) => manager._id === currentUserId);
+        });
+
+    // Filter backlogs based on managed sprints
+    let filteredBacklogs = backlogs.filter((b) => {
+      // Admins see all backlogs in sprints
+      if (userRole === 'admin') {
+        return b.sprint !== undefined && b.sprint !== null;
+      }
+      // Managers see only backlogs in their sprints
+      if (!b.sprint) return false;
+      const sprintId = b.sprint?._id || b.sprint;
+      return managedSprints.some((sprint) => sprint._id === sprintId);
+    });
 
     // Apply project filter if a specific project is selected
     if (projectFilter !== 'all') {
@@ -451,8 +492,20 @@ export default function TimelinePage() {
   };
 
   const renderSprintTimeline = () => {
-    // Get all backlogs that are in a sprint
-    let filteredBacklogs = backlogs.filter((b) => b.sprint);
+    // Filter sprints: admins see all, managers see only their sprints
+    const managedSprints = userRole === 'admin'
+      ? sprints
+      : sprints.filter((sprint) => {
+          if (!sprint.managers || sprint.managers.length === 0) return false;
+          return sprint.managers.some((manager) => manager._id === currentUserId);
+        });
+
+    // Get all backlogs that are in managed sprints
+    let filteredBacklogs = backlogs.filter((b) => {
+      if (!b.sprint) return false;
+      const sprintId = b.sprint?._id || b.sprint;
+      return managedSprints.some((sprint) => sprint._id === sprintId);
+    });
 
     if (sprintFilter !== 'all') {
       filteredBacklogs = filteredBacklogs.filter((b) => {
@@ -662,11 +715,32 @@ export default function TimelinePage() {
               onChange={(e) => setProjectFilter(e.target.value)}
             >
               <option value="all">All Projects</option>
-              {Array.from(new Set(backlogs.map((b) => b.project))).sort().map((project) => (
-                <option key={project} value={project}>
-                  {project}
-                </option>
-              ))}
+              {Array.from(
+                new Set(
+                  backlogs
+                    .filter((b) => {
+                      // Admins see all projects
+                      if (userRole === 'admin') {
+                        return b.sprint !== undefined && b.sprint !== null;
+                      }
+                      // Managers see only projects with backlogs in their sprints
+                      if (!b.sprint) return false;
+                      const sprintId = b.sprint?._id || b.sprint;
+                      const managedSprints = sprints.filter((sprint) => {
+                        if (!sprint.managers || sprint.managers.length === 0) return false;
+                        return sprint.managers.some((manager) => manager._id === currentUserId);
+                      });
+                      return managedSprints.some((sprint) => sprint._id === sprintId);
+                    })
+                    .map((b) => b.project)
+                )
+              )
+                .sort()
+                .map((project) => (
+                  <option key={project} value={project}>
+                    {project}
+                  </option>
+                ))}
             </select>
           )}
           {viewMode === 'sprint' && (
@@ -676,11 +750,19 @@ export default function TimelinePage() {
               onChange={(e) => setSprintFilter(e.target.value)}
             >
               <option value="all">All Sprints</option>
-              {sprints.map((sprint) => (
-                <option key={sprint._id} value={sprint._id}>
-                  {sprint.name}
-                </option>
-              ))}
+              {sprints
+                .filter((sprint) => {
+                  // Admins see all sprints
+                  if (userRole === 'admin') return true;
+                  // Managers see only their sprints
+                  if (!sprint.managers || sprint.managers.length === 0) return false;
+                  return sprint.managers.some((manager) => manager._id === currentUserId);
+                })
+                .map((sprint) => (
+                  <option key={sprint._id} value={sprint._id}>
+                    {sprint.name}
+                  </option>
+                ))}
             </select>
           )}
         </div>
