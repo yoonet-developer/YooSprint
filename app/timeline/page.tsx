@@ -241,16 +241,25 @@ export default function TimelinePage() {
           return sprint.managers.some((manager) => manager._id === currentUserId);
         });
 
-    // Filter backlogs based on managed sprints
+    // Get sprint IDs that the user can manage
+    const managedSprintIds = managedSprints.map(s => s._id);
+
+    // Filter backlogs - include both backlogs in sprints AND backlogs not in any sprint
     let filteredBacklogs = backlogs.filter((b) => {
-      // Admins see all backlogs in sprints
+      // Admins see all backlogs (with or without sprint)
       if (userRole === 'admin') {
-        return b.sprint !== undefined && b.sprint !== null;
+        return true;
       }
-      // Managers see only backlogs in their sprints
-      if (!b.sprint) return false;
+
+      // Managers see:
+      // 1. Backlogs in their managed sprints
+      // 2. Backlogs not in any sprint (available backlogs)
+      if (!b.sprint) {
+        return true; // Include backlogs not in sprint
+      }
+
       const sprintId = b.sprint?._id || b.sprint;
-      return managedSprints.some((sprint) => sprint._id === sprintId);
+      return managedSprintIds.includes(sprintId);
     });
 
     // Apply project filter if a specific project is selected
@@ -721,10 +730,10 @@ export default function TimelinePage() {
                     .filter((b) => {
                       // Admins see all projects
                       if (userRole === 'admin') {
-                        return b.sprint !== undefined && b.sprint !== null;
+                        return true;
                       }
-                      // Managers see only projects with backlogs in their sprints
-                      if (!b.sprint) return false;
+                      // Managers see projects with backlogs in their sprints OR not in any sprint
+                      if (!b.sprint) return true;
                       const sprintId = b.sprint?._id || b.sprint;
                       const managedSprints = sprints.filter((sprint) => {
                         if (!sprint.managers || sprint.managers.length === 0) return false;

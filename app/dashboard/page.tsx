@@ -77,6 +77,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [deadlineTasksPage, setDeadlineTasksPage] = useState(1);
   const deadlineTasksPerPage = 4;
+  const [selectedProject, setSelectedProject] = useState<string>('all');
 
   useEffect(() => {
     const userData = localStorage.getItem('user');
@@ -271,101 +272,226 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {/* Tasks Nearing Sprint End Date */}
+        {/* Tasks and Project Progress - Side by Side */}
         {(user.role === 'admin' || user.role === 'manager') && (
-          <div style={styles.deadlineSection}>
-            <div style={styles.sectionHeader}>
+          <div style={styles.teamMemberTasksWrapper}>
+            {/* Tasks Nearing Sprint End Date */}
+            <div style={styles.teamMemberTaskSection}>
               <h2 style={styles.sectionTitle}>Tasks Nearing Sprint End</h2>
-              {tasksNearingDeadline.length > deadlineTasksPerPage && (
-                <div style={styles.paginationContainer}>
-                  <button
-                    style={{
-                      ...styles.paginationButton,
-                      ...(deadlineTasksPage === 1 ? styles.paginationButtonDisabled : {}),
-                    }}
-                    onClick={() => setDeadlineTasksPage(deadlineTasksPage - 1)}
-                    disabled={deadlineTasksPage === 1}
-                  >
-                    ‹
-                  </button>
-                  <span style={styles.paginationInfo}>
-                    {deadlineTasksPage} / {Math.ceil(tasksNearingDeadline.length / deadlineTasksPerPage)}
-                  </span>
-                  <button
-                    style={{
-                      ...styles.paginationButton,
-                      ...(deadlineTasksPage === Math.ceil(tasksNearingDeadline.length / deadlineTasksPerPage) ? styles.paginationButtonDisabled : {}),
-                    }}
-                    onClick={() => setDeadlineTasksPage(deadlineTasksPage + 1)}
-                    disabled={deadlineTasksPage === Math.ceil(tasksNearingDeadline.length / deadlineTasksPerPage)}
-                  >
-                    ›
-                  </button>
+              <div style={styles.teamMemberTasksBackground}>
+                <div style={styles.scrollableTaskContainer}>
+                  {tasksNearingDeadline.length === 0 ? (
+                    <div style={styles.emptyTaskListInline}>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" fill="currentColor" viewBox="0 0 16 16" style={{ marginBottom: '16px', color: '#a0aec0' }}>
+                        <path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0M8 4a.905.905 0 0 0-.9.995l.35 3.507a.552.552 0 0 0 1.1 0l.35-3.507A.905.905 0 0 0 8 4m.002 6a1 1 0 1 0 0 2 1 1 0 0 0 0-2"/>
+                      </svg>
+                      <p style={styles.emptyDeadlineText}>No tasks nearing sprint end within 7 days</p>
+                      <p style={styles.emptyDeadlineSubtext}>All active sprint tasks are on track!</p>
+                    </div>
+                  ) : (
+                    <div style={styles.deadlineListVertical}>
+                      {tasksNearingDeadline.map((task) => {
+                        const isUrgent = task.daysUntilEnd <= 3;
+                        return (
+                          <div
+                            key={task.backlog._id}
+                            style={{
+                              ...styles.deadlineCard,
+                              borderLeft: `4px solid ${isUrgent ? '#f56565' : '#ed8936'}`,
+                            }}
+                          >
+                            <div style={styles.deadlineCardHeader}>
+                              <h3 style={styles.deadlineCardTitle}>{task.backlog.title}</h3>
+                              <span
+                                style={{
+                                  ...styles.deadlineBadge,
+                                  backgroundColor: isUrgent ? '#f56565' : '#ed8936',
+                                }}
+                              >
+                                {task.daysUntilEnd === 0
+                                  ? 'Today'
+                                  : task.daysUntilEnd === 1
+                                  ? '1 day'
+                                  : `${task.daysUntilEnd} days`}
+                              </span>
+                            </div>
+                            <div style={styles.deadlineCardMeta}>
+                              <div style={styles.deadlineMetaItem}>
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" style={{ marginRight: '6px', verticalAlign: 'middle' }}>
+                                  <path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6m2-3a2 2 0 1 1-4 0 2 2 0 0 1 4 0m4 8c0 1-1 1-1 1H3s-1 0-1-1 1-4 6-4 6 3 6 4m-1-.004c-.001-.246-.154-.986-.832-1.664C11.516 10.68 10.289 10 8 10s-3.516.68-4.168 1.332c-.678.678-.83 1.418-.832 1.664z"/>
+                                </svg>
+                                <strong>Assigned:</strong> {task.backlog.assignee?.name || 'Unassigned'}
+                              </div>
+                              <div style={styles.deadlineMetaItem}>
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" style={{ marginRight: '6px', verticalAlign: 'middle' }}>
+                                  <path d="M2.5 15a.5.5 0 1 1 0-1h1v-1a4.5 4.5 0 0 1 2.557-4.06c.29-.139.443-.377.443-.59v-.7c0-.213-.154-.451-.443-.59A4.5 4.5 0 0 1 3.5 3V2h-1a.5.5 0 0 1 0-1h11a.5.5 0 0 1 0 1h-1v1a4.5 4.5 0 0 1-2.557 4.06c-.29.139-.443.377-.443.59v.7c0 .213.154.451.443.59A4.5 4.5 0 0 1 12.5 13v1h1a.5.5 0 0 1 0 1zm2-13v1c0 .537.12 1.045.337 1.5h6.326c.216-.455.337-.963.337-1.5V2zm3 6.35c0 .701-.478 1.236-1.011 1.492A3.5 3.5 0 0 0 4.5 13s.866-1.299 3-1.48zm1 0v3.17c2.134.181 3 1.48 3 1.48a3.5 3.5 0 0 0-1.989-3.158C8.978 9.586 8.5 9.052 8.5 8.351z"/>
+                                </svg>
+                                <strong>Sprint:</strong> {task.backlog.sprint?.name}
+                              </div>
+                              <div style={styles.deadlineMetaItem}>
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" style={{ marginRight: '6px', verticalAlign: 'middle' }}>
+                                  <path d="M8.186 1.113a.5.5 0 0 0-.372 0L1.846 3.5 8 5.961 14.154 3.5zM15 4.239l-6.5 2.6v7.922l6.5-2.6V4.24zM7.5 14.762V6.838L1 4.239v7.923zM7.443.184a1.5 1.5 0 0 1 1.114 0l7.129 2.852A.5.5 0 0 1 16 3.5v8.662a1 1 0 0 1-.629.928l-7.185 2.874a.5.5 0 0 1-.372 0L.63 13.09a1 1 0 0 1-.63-.928V3.5a.5.5 0 0 1 .314-.464z"/>
+                                </svg>
+                                <strong>Project:</strong> {task.backlog.project}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-            {tasksNearingDeadline.length === 0 ? (
-              <div style={styles.emptyDeadlineCard}>
-                <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" fill="currentColor" viewBox="0 0 16 16" style={{ marginBottom: '16px', color: '#a0aec0' }}>
-                  <path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0M8 4a.905.905 0 0 0-.9.995l.35 3.507a.552.552 0 0 0 1.1 0l.35-3.507A.905.905 0 0 0 8 4m.002 6a1 1 0 1 0 0 2 1 1 0 0 0 0-2"/>
-                </svg>
-                <p style={styles.emptyDeadlineText}>No tasks nearing sprint end within 7 days</p>
-                <p style={styles.emptyDeadlineSubtext}>All active sprint tasks are on track!</p>
               </div>
-            ) : (
-              <div style={styles.deadlineGrid}>
-                {tasksNearingDeadline
-                  .slice((deadlineTasksPage - 1) * deadlineTasksPerPage, deadlineTasksPage * deadlineTasksPerPage)
-                  .map((task) => {
-                  const isUrgent = task.daysUntilEnd <= 3;
-                  return (
-                    <div
-                      key={task.backlog._id}
-                      style={{
-                        ...styles.deadlineCard,
-                        borderLeft: `4px solid ${isUrgent ? '#f56565' : '#ed8936'}`,
-                      }}
-                    >
-                      <div style={styles.deadlineCardHeader}>
-                        <h3 style={styles.deadlineCardTitle}>{task.backlog.title}</h3>
-                        <span
-                          style={{
-                            ...styles.deadlineBadge,
-                            backgroundColor: isUrgent ? '#f56565' : '#ed8936',
-                          }}
-                        >
-                          {task.daysUntilEnd === 0
-                            ? 'Today'
-                            : task.daysUntilEnd === 1
-                            ? '1 day'
-                            : `${task.daysUntilEnd} days`}
-                        </span>
-                      </div>
-                      <div style={styles.deadlineCardMeta}>
-                        <div style={styles.deadlineMetaItem}>
-                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" style={{ marginRight: '6px', verticalAlign: 'middle' }}>
-                            <path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6m2-3a2 2 0 1 1-4 0 2 2 0 0 1 4 0m4 8c0 1-1 1-1 1H3s-1 0-1-1 1-4 6-4 6 3 6 4m-1-.004c-.001-.246-.154-.986-.832-1.664C11.516 10.68 10.289 10 8 10s-3.516.68-4.168 1.332c-.678.678-.83 1.418-.832 1.664z"/>
-                          </svg>
-                          <strong>Assigned:</strong> {task.backlog.assignee?.name || 'Unassigned'}
-                        </div>
-                        <div style={styles.deadlineMetaItem}>
-                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" style={{ marginRight: '6px', verticalAlign: 'middle' }}>
-                            <path d="M2.5 15a.5.5 0 1 1 0-1h1v-1a4.5 4.5 0 0 1 2.557-4.06c.29-.139.443-.377.443-.59v-.7c0-.213-.154-.451-.443-.59A4.5 4.5 0 0 1 3.5 3V2h-1a.5.5 0 0 1 0-1h11a.5.5 0 0 1 0 1h-1v1a4.5 4.5 0 0 1-2.557 4.06c-.29.139-.443.377-.443.59v.7c0 .213.154.451.443.59A4.5 4.5 0 0 1 12.5 13v1h1a.5.5 0 0 1 0 1zm2-13v1c0 .537.12 1.045.337 1.5h6.326c.216-.455.337-.963.337-1.5V2zm3 6.35c0 .701-.478 1.236-1.011 1.492A3.5 3.5 0 0 0 4.5 13s.866-1.299 3-1.48zm1 0v3.17c2.134.181 3 1.48 3 1.48a3.5 3.5 0 0 0-1.989-3.158C8.978 9.586 8.5 9.052 8.5 8.351z"/>
-                          </svg>
-                          <strong>Sprint:</strong> {task.backlog.sprint?.name}
-                        </div>
-                        <div style={styles.deadlineMetaItem}>
-                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" style={{ marginRight: '6px', verticalAlign: 'middle' }}>
+            </div>
+
+            {/* Project Progress */}
+            <div style={styles.teamMemberTaskSection}>
+              <h2 style={styles.sectionTitle}>Project Progress</h2>
+              <div style={styles.teamMemberTasksBackground}>
+                <div style={styles.projectFilterContainer}>
+                  <select
+                    style={styles.projectFilter}
+                    value={selectedProject}
+                    onChange={(e) => setSelectedProject(e.target.value)}
+                  >
+                    <option value="all">All Projects</option>
+                    {(() => {
+                      const projects = new Set(backlogs.map((b) => b.project));
+                      return Array.from(projects).map((project) => (
+                        <option key={project} value={project}>{project}</option>
+                      ));
+                    })()}
+                  </select>
+                </div>
+                <div style={styles.scrollableTaskContainer}>
+                  {(() => {
+                    // Calculate project completion data
+                    const projectData = new Map<string, { total: number; completed: number }>();
+
+                    backlogs.forEach((backlog) => {
+                      const project = backlog.project;
+                      if (!projectData.has(project)) {
+                        projectData.set(project, { total: 0, completed: 0 });
+                      }
+                      const data = projectData.get(project)!;
+                      data.total++;
+                      if (backlog.taskStatus === 'completed') {
+                        data.completed++;
+                      }
+                    });
+
+                    const projectColors = [
+                      '#FF6495', '#4299e1', '#48bb78', '#ed8936',
+                      '#9f7aea', '#38b2ac', '#f56565', '#667eea'
+                    ];
+
+                    // Filter projects based on selection
+                    const filteredProjects = selectedProject === 'all'
+                      ? Array.from(projectData.entries())
+                      : Array.from(projectData.entries()).filter(([project]) => project === selectedProject);
+
+                    if (filteredProjects.length === 0) {
+                      return (
+                        <div style={styles.emptyTaskListInline}>
+                          <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" fill="currentColor" viewBox="0 0 16 16" style={{ marginBottom: '16px', color: '#a0aec0' }}>
                             <path d="M8.186 1.113a.5.5 0 0 0-.372 0L1.846 3.5 8 5.961 14.154 3.5zM15 4.239l-6.5 2.6v7.922l6.5-2.6V4.24zM7.5 14.762V6.838L1 4.239v7.923zM7.443.184a1.5 1.5 0 0 1 1.114 0l7.129 2.852A.5.5 0 0 1 16 3.5v8.662a1 1 0 0 1-.629.928l-7.185 2.874a.5.5 0 0 1-.372 0L.63 13.09a1 1 0 0 1-.63-.928V3.5a.5.5 0 0 1 .314-.464z"/>
                           </svg>
-                          <strong>Project:</strong> {task.backlog.project}
+                          <p style={styles.emptyDeadlineText}>No projects found</p>
                         </div>
+                      );
+                    }
+
+                    return (
+                      <div style={styles.projectCardsScrollable}>
+                        {filteredProjects.map(([project, data], index) => {
+                          const percentage = data.total > 0 ? Math.round((data.completed / data.total) * 100) : 0;
+                          const color = projectColors[index % projectColors.length];
+                          const circumference = 2 * Math.PI * 45;
+                          const strokeDashoffset = circumference - (percentage / 100) * circumference;
+
+                          return (
+                            <Link
+                              key={project}
+                              href={`/timeline?project=${encodeURIComponent(project)}`}
+                              style={{ textDecoration: 'none', color: 'inherit' }}
+                            >
+                              <div
+                                style={styles.projectCardCompact}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.transform = 'translateY(-2px)';
+                                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.transform = 'translateY(0)';
+                                  e.currentTarget.style.boxShadow = 'none';
+                                }}
+                              >
+                                <h3 style={styles.projectCardTitle}>{project}</h3>
+                                <div style={styles.pieChartContainer}>
+                                  <svg width="120" height="120" style={styles.pieChart}>
+                                    {/* Background circle */}
+                                    <circle
+                                      cx="60"
+                                      cy="60"
+                                      r="45"
+                                      fill="none"
+                                      stroke="#e2e8f0"
+                                      strokeWidth="12"
+                                    />
+                                    {/* Progress circle */}
+                                    <circle
+                                      cx="60"
+                                      cy="60"
+                                      r="45"
+                                      fill="none"
+                                      stroke={color}
+                                      strokeWidth="12"
+                                      strokeDasharray={circumference}
+                                      strokeDashoffset={strokeDashoffset}
+                                      strokeLinecap="round"
+                                      transform="rotate(-90 60 60)"
+                                      style={{ transition: 'stroke-dashoffset 0.5s ease' }}
+                                    />
+                                    {/* Center text */}
+                                    <text
+                                      x="60"
+                                      y="60"
+                                      textAnchor="middle"
+                                      dominantBaseline="middle"
+                                      style={{
+                                        fontSize: '24px',
+                                        fontWeight: 'bold',
+                                        fill: '#2d3748',
+                                      }}
+                                    >
+                                      {percentage}%
+                                    </text>
+                                  </svg>
+                                </div>
+                                <div style={styles.projectStats}>
+                                  <div style={styles.projectStatItem}>
+                                    <span style={styles.projectStatLabel}>Total Tasks:</span>
+                                    <span style={styles.projectStatValue}>{data.total}</span>
+                                  </div>
+                                  <div style={styles.projectStatItem}>
+                                    <span style={styles.projectStatLabel}>Completed:</span>
+                                    <span style={{...styles.projectStatValue, color: '#48bb78'}}>{data.completed}</span>
+                                  </div>
+                                  <div style={styles.projectStatItem}>
+                                    <span style={styles.projectStatLabel}>Remaining:</span>
+                                    <span style={{...styles.projectStatValue, color: '#718096'}}>{data.total - data.completed}</span>
+                                  </div>
+                                </div>
+                              </div>
+                            </Link>
+                          );
+                        })}
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })()}
+                </div>
               </div>
-            )}
+            </div>
           </div>
         )}
 
@@ -613,6 +739,7 @@ export default function DashboardPage() {
                 </div>
               </div>
             </div>
+
           </div>
         )}
       </div>
@@ -950,5 +1077,93 @@ const styles: { [key: string]: React.CSSProperties } = {
     color: '#4a5568',
     fontWeight: '500',
     padding: '0 4px',
+  },
+  projectCardsGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+    gap: '20px',
+    marginBottom: '40px',
+  },
+  projectCard: {
+    background: 'white',
+    padding: '24px',
+    borderRadius: '10px',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+  },
+  projectCardTitle: {
+    fontSize: '18px',
+    fontWeight: '600',
+    color: '#2d3748',
+    marginBottom: '20px',
+    textAlign: 'center',
+    width: '100%',
+  },
+  pieChartContainer: {
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: '20px',
+  },
+  pieChart: {
+    transform: 'rotate(0deg)',
+  },
+  projectStats: {
+    width: '100%',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '12px',
+  },
+  projectStatItem: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingBottom: '8px',
+    borderBottom: '1px solid #e2e8f0',
+  },
+  projectStatLabel: {
+    fontSize: '14px',
+    color: '#718096',
+    fontWeight: '500',
+  },
+  projectStatValue: {
+    fontSize: '16px',
+    fontWeight: '600',
+    color: '#2d3748',
+  },
+  projectFilterContainer: {
+    padding: '0 0 16px 0',
+    borderBottom: '1px solid #e2e8f0',
+    marginBottom: '16px',
+  },
+  projectFilter: {
+    width: '100%',
+    padding: '10px 12px',
+    border: '1px solid #e2e8f0',
+    borderRadius: '6px',
+    fontSize: '14px',
+    cursor: 'pointer',
+    background: 'white',
+    outline: 'none',
+    color: '#4a5568',
+    fontWeight: '500',
+  },
+  projectCardsScrollable: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '16px',
+  },
+  projectCardCompact: {
+    background: '#f7fafc',
+    padding: '20px',
+    borderRadius: '10px',
+    border: '1px solid #e2e8f0',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
   },
 };

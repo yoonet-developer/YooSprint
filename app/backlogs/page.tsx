@@ -50,6 +50,7 @@ export default function BacklogsPage() {
   const [loading, setLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [filter, setFilter] = useState('backlog');
+  const [searchQuery, setSearchQuery] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
@@ -59,7 +60,8 @@ export default function BacklogsPage() {
   const [showDeleteWarningModal, setShowDeleteWarningModal] = useState(false);
   const [backlogDeleteWarning, setBacklogDeleteWarning] = useState<Backlog | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 4;
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
+  const itemsPerPage = viewMode === 'grid' ? 8 : 4;
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -86,8 +88,12 @@ export default function BacklogsPage() {
 
   useEffect(() => {
     applyFilter();
-    setCurrentPage(1); // Reset to page 1 when filter changes
-  }, [backlogs, filter]);
+    setCurrentPage(1); // Reset to page 1 when filter or search changes
+  }, [backlogs, filter, searchQuery]);
+
+  useEffect(() => {
+    setCurrentPage(1); // Reset to page 1 when view mode changes
+  }, [viewMode]);
 
   const fetchBacklogs = async () => {
     try {
@@ -146,17 +152,33 @@ export default function BacklogsPage() {
   };
 
   const applyFilter = () => {
+    let filtered = backlogs;
+
+    // Apply status filter
     if (filter === 'all') {
-      setFilteredBacklogs(backlogs);
+      filtered = backlogs;
     } else if (filter === 'done') {
       // Show items where status is 'done' OR taskStatus is 'completed'
-      setFilteredBacklogs(backlogs.filter(b => b.status === 'done' || b.taskStatus === 'completed'));
+      filtered = backlogs.filter(b => b.status === 'done' || b.taskStatus === 'completed');
     } else if (filter === 'in-sprint') {
       // Show items in sprint that are NOT completed
-      setFilteredBacklogs(backlogs.filter(b => b.status === 'in-sprint' && b.taskStatus !== 'completed'));
+      filtered = backlogs.filter(b => b.status === 'in-sprint' && b.taskStatus !== 'completed');
     } else {
-      setFilteredBacklogs(backlogs.filter(b => b.status === filter));
+      filtered = backlogs.filter(b => b.status === filter);
     }
+
+    // Apply search filter
+    if (searchQuery.trim() !== '') {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(b =>
+        b.title.toLowerCase().includes(query) ||
+        b.description?.toLowerCase().includes(query) ||
+        b.project.toLowerCase().includes(query) ||
+        b.assignee?.name.toLowerCase().includes(query)
+      );
+    }
+
+    setFilteredBacklogs(filtered);
   };
 
   // Pagination calculations
@@ -353,26 +375,86 @@ export default function BacklogsPage() {
       <div style={styles.container}>
         <div style={styles.header}>
           <h2 style={styles.title}>Product Backlogs</h2>
-          {currentUser?.role !== 'member' && (
-            <button style={styles.primaryButton} onClick={openAddModal}>
-              + Add Backlog Item
-            </button>
-          )}
+          <div style={styles.headerRight}>
+            <div style={styles.viewToggle}>
+              <button
+                style={{
+                  ...styles.viewButton,
+                  ...(viewMode === 'list' ? styles.viewButtonActive : {}),
+                }}
+                onClick={() => setViewMode('list')}
+                title="List View"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" viewBox="0 0 16 16">
+                  <path fillRule="evenodd" d="M2.5 12a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5m0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5m0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5"/>
+                </svg>
+              </button>
+              <button
+                style={{
+                  ...styles.viewButton,
+                  ...(viewMode === 'grid' ? styles.viewButtonActive : {}),
+                }}
+                onClick={() => setViewMode('grid')}
+                title="Grid View"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" viewBox="0 0 16 16">
+                  <path d="M1 2.5A1.5 1.5 0 0 1 2.5 1h3A1.5 1.5 0 0 1 7 2.5v3A1.5 1.5 0 0 1 5.5 7h-3A1.5 1.5 0 0 1 1 5.5zm8 0A1.5 1.5 0 0 1 10.5 1h3A1.5 1.5 0 0 1 15 2.5v3A1.5 1.5 0 0 1 13.5 7h-3A1.5 1.5 0 0 1 9 5.5zM1 10.5A1.5 1.5 0 0 1 2.5 9h3A1.5 1.5 0 0 1 7 10.5v3A1.5 1.5 0 0 1 5.5 15h-3A1.5 1.5 0 0 1 1 13.5zm8 0A1.5 1.5 0 0 1 10.5 9h3a1.5 1.5 0 0 1 1.5 1.5v3a1.5 1.5 0 0 1-1.5 1.5h-3A1.5 1.5 0 0 1 9 13.5z"/>
+                </svg>
+              </button>
+            </div>
+            {currentUser?.role !== 'member' && (
+              <button style={styles.primaryButton} onClick={openAddModal}>
+                + Add Backlog Item
+              </button>
+            )}
+          </div>
         </div>
 
-        <div style={styles.filterRow}>
-          {['all', 'backlog', 'in-sprint', 'done'].map((f) => (
-            <button
-              key={f}
-              style={{
-                ...styles.filterButton,
-                ...(filter === f ? styles.filterButtonActive : {}),
-              }}
-              onClick={() => setFilter(f)}
+        <div style={styles.filterAndSearchRow}>
+          <div style={styles.filterRow}>
+            {['all', 'backlog', 'in-sprint', 'done'].map((f) => (
+              <button
+                key={f}
+                style={{
+                  ...styles.filterButton,
+                  ...(filter === f ? styles.filterButtonActive : {}),
+                }}
+                onClick={() => setFilter(f)}
+              >
+                {f === 'all' ? 'All' : f === 'backlog' ? 'Available' : f === 'in-sprint' ? 'In Sprint' : 'Completed'}
+              </button>
+            ))}
+          </div>
+
+          {/* Search Bar */}
+          <div style={styles.searchContainer}>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="16"
+              height="16"
+              fill="currentColor"
+              viewBox="0 0 16 16"
+              style={styles.searchIcon}
             >
-              {f === 'all' ? 'All' : f === 'backlog' ? 'Available' : f === 'in-sprint' ? 'In Sprint' : 'Completed'}
-            </button>
-          ))}
+              <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z"/>
+            </svg>
+            <input
+              type="text"
+              style={styles.searchInput}
+              placeholder="Search backlogs"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+            {searchQuery && (
+              <button
+                style={styles.clearSearchButton}
+                onClick={() => setSearchQuery('')}
+                title="Clear search"
+              >
+                ✕
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Pagination */}
@@ -404,7 +486,7 @@ export default function BacklogsPage() {
           </div>
         )}
 
-        <div style={styles.backlogGrid}>
+        <div style={viewMode === 'grid' ? styles.backlogGridView : styles.backlogGrid}>
           {filteredBacklogs.length === 0 ? (
             <div style={styles.empty}>No backlog items found</div>
           ) : (
@@ -412,7 +494,7 @@ export default function BacklogsPage() {
               <div
                 key={backlog._id}
                 style={{
-                  ...styles.backlogCard,
+                  ...(viewMode === 'grid' ? styles.backlogCardGrid : styles.backlogCard),
                   borderLeft: `4px solid ${getPriorityColor(backlog.priority)}`,
                 }}
               >
@@ -708,6 +790,36 @@ const styles: { [key: string]: React.CSSProperties } = {
     color: '#2d3748',
     margin: 0,
   },
+  headerRight: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+  },
+  viewToggle: {
+    display: 'flex',
+    gap: '8px',
+    background: '#f7fafc',
+    padding: '4px',
+    borderRadius: '8px',
+    border: '1px solid #e2e8f0',
+  },
+  viewButton: {
+    padding: '8px 12px',
+    border: 'none',
+    background: 'transparent',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    color: '#718096',
+    transition: 'all 0.2s',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  viewButtonActive: {
+    background: 'white',
+    color: '#FF6495',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+  },
   primaryButton: {
     background: '#FF6495',
     color: 'white',
@@ -719,10 +831,64 @@ const styles: { [key: string]: React.CSSProperties } = {
     cursor: 'pointer',
     transition: 'transform 0.2s',
   },
+  filterAndSearchRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: '16px',
+    marginBottom: '24px',
+    flexWrap: 'wrap',
+  },
   filterRow: {
     display: 'flex',
     gap: '12px',
-    marginBottom: '24px',
+    flex: 1,
+    minWidth: '0',
+    flexWrap: 'wrap',
+  },
+  searchContainer: {
+    position: 'relative',
+    width: '25%',
+    minWidth: '200px',
+    maxWidth: '300px',
+    flexShrink: 0,
+    boxSizing: 'border-box',
+  },
+  searchIcon: {
+    position: 'absolute',
+    left: '12px',
+    top: '50%',
+    transform: 'translateY(-50%)',
+    color: '#a0aec0',
+    pointerEvents: 'none' as const,
+  },
+  searchInput: {
+    width: '100%',
+    padding: '8px 40px 8px 36px',
+    border: '2px solid #e2e8f0',
+    borderRadius: '6px',
+    fontSize: '14px',
+    outline: 'none',
+    transition: 'border-color 0.2s',
+    fontFamily: 'inherit',
+    boxSizing: 'border-box',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  },
+  clearSearchButton: {
+    position: 'absolute',
+    right: '12px',
+    top: '50%',
+    transform: 'translateY(-50%)',
+    background: 'transparent',
+    border: 'none',
+    color: '#a0aec0',
+    fontSize: '18px',
+    cursor: 'pointer',
+    padding: '4px 8px',
+    borderRadius: '4px',
+    transition: 'all 0.2s',
   },
   filterButton: {
     padding: '8px 16px',
@@ -746,12 +912,26 @@ const styles: { [key: string]: React.CSSProperties } = {
     flexDirection: 'column',
     gap: '16px',
   },
+  backlogGridView: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))',
+    gap: '20px',
+  },
   backlogCard: {
     background: 'white',
     padding: '20px',
     borderRadius: '10px',
     boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
     transition: 'transform 0.2s, box-shadow 0.2s',
+  },
+  backlogCardGrid: {
+    background: 'white',
+    padding: '20px',
+    borderRadius: '10px',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+    transition: 'transform 0.2s, box-shadow 0.2s',
+    display: 'flex',
+    flexDirection: 'column',
   },
   cardHeader: {
     display: 'flex',

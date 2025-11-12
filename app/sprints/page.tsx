@@ -43,8 +43,8 @@ export default function SprintsPage() {
   const [backlogs, setBacklogs] = useState<Backlog[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [filter, setFilter] = useState('active');
+  const [searchQuery, setSearchQuery] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deletingSprint, setDeletingSprint] = useState<Sprint | null>(null);
@@ -64,12 +64,6 @@ export default function SprintsPage() {
   });
 
   useEffect(() => {
-    // Get current user from localStorage
-    const userData = localStorage.getItem('user');
-    if (userData) {
-      setCurrentUser(JSON.parse(userData));
-    }
-
     fetchSprints();
     fetchBacklogs();
     fetchUsers();
@@ -77,8 +71,8 @@ export default function SprintsPage() {
 
   useEffect(() => {
     applyFilter();
-    setCurrentPage(1); // Reset to page 1 when filter changes
-  }, [sprints, filter]);
+    setCurrentPage(1); // Reset to page 1 when filter or search changes
+  }, [sprints, filter, searchQuery]);
 
   const fetchSprints = async () => {
     try {
@@ -150,11 +144,27 @@ export default function SprintsPage() {
   };
 
   const applyFilter = () => {
+    let filtered = sprints;
+
+    // Apply status filter
     if (filter === 'all') {
-      setFilteredSprints(sprints);
+      filtered = sprints;
     } else {
-      setFilteredSprints(sprints.filter(s => s.status === filter));
+      filtered = sprints.filter(s => s.status === filter);
     }
+
+    // Apply search filter
+    if (searchQuery.trim() !== '') {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(s =>
+        s.name.toLowerCase().includes(query) ||
+        s.goal?.toLowerCase().includes(query) ||
+        s.project?.toLowerCase().includes(query) ||
+        s.managers?.some(m => m.name.toLowerCase().includes(query))
+      );
+    }
+
+    setFilteredSprints(filtered);
   };
 
   const handleCreateSprint = async (e: React.FormEvent) => {
@@ -329,7 +339,16 @@ export default function SprintsPage() {
 
   const getFilteredBacklogs = () => {
     return backlogs
-      .filter(b => b.taskStatus !== 'in-sprint' || (editingSprint && editingSprint.backlogItems?.some(item => item._id === b._id)))
+      .filter(b => {
+        // Show backlogs that are:
+        // 1. Not in any sprint (status !== 'in-sprint'), OR
+        // 2. Already selected in the current form (being added/edited in this sprint)
+        if (b.status !== 'in-sprint') {
+          return true; // Show backlogs not in any sprint
+        }
+        // If backlog is in a sprint, only show it if it's selected in the current form
+        return formData.backlogIds.includes(b._id);
+      })
       .filter(b => b.taskStatus !== 'completed') // Exclude completed backlogs
       .filter(b =>
         backlogSearch === '' ||
@@ -352,9 +371,9 @@ export default function SprintsPage() {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'active': return '#FF6495';
+      case 'active': return '#48bb78';
       case 'planned': return '#4299e1';
-      case 'completed': return '#48bb78';
+      case 'completed': return '#718096';
       default: return '#718096';
     }
   };
@@ -380,26 +399,56 @@ export default function SprintsPage() {
       <div style={styles.container}>
         <div style={styles.header}>
           <h2 style={styles.title}>Sprints</h2>
-          {currentUser?.role !== 'member' && (
-            <button style={styles.primaryButton} onClick={openAddModal}>
-              + Create Sprint
-            </button>
-          )}
+          <button style={styles.primaryButton} onClick={openAddModal}>
+            + Create Sprint
+          </button>
         </div>
 
-        <div style={styles.filterRow}>
-          {['all', 'planned', 'active', 'completed'].map((f) => (
-            <button
-              key={f}
-              style={{
-                ...styles.filterButton,
-                ...(filter === f ? styles.filterButtonActive : {}),
-              }}
-              onClick={() => setFilter(f)}
+        <div style={styles.filterAndSearchRow}>
+          <div style={styles.filterRow}>
+            {['all', 'planned', 'active', 'completed'].map((f) => (
+              <button
+                key={f}
+                style={{
+                  ...styles.filterButton,
+                  ...(filter === f ? styles.filterButtonActive : {}),
+                }}
+                onClick={() => setFilter(f)}
+              >
+                {f.charAt(0).toUpperCase() + f.slice(1)}
+              </button>
+            ))}
+          </div>
+
+          {/* Search Bar */}
+          <div style={styles.searchContainer}>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="16"
+              height="16"
+              fill="currentColor"
+              viewBox="0 0 16 16"
+              style={styles.searchIcon}
             >
-              {f.charAt(0).toUpperCase() + f.slice(1)}
-            </button>
-          ))}
+              <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z"/>
+            </svg>
+            <input
+              type="text"
+              style={styles.searchInput}
+              placeholder="Search sprints"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+            {searchQuery && (
+              <button
+                style={styles.clearSearchButton}
+                onClick={() => setSearchQuery('')}
+                title="Clear search"
+              >
+                ✕
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Pagination */}
@@ -460,16 +509,12 @@ export default function SprintsPage() {
                     >
                       {isExpanded ? '▼' : '▶'}
                     </button>
-                    {currentUser?.role !== 'member' && (
-                      <>
-                        <button style={styles.actionButton} onClick={() => handleEdit(sprint)}>
-                          Edit
-                        </button>
-                        <button style={styles.deleteButton} onClick={() => openDeleteModal(sprint)}>
-                          Delete
-                        </button>
-                      </>
-                    )}
+                    <button style={styles.actionButton} onClick={() => handleEdit(sprint)}>
+                      Edit
+                    </button>
+                    <button style={styles.deleteButton} onClick={() => openDeleteModal(sprint)}>
+                      Delete
+                    </button>
                   </div>
                 </div>
 
@@ -483,16 +528,6 @@ export default function SprintsPage() {
                   <div style={styles.infoItem}>
                     <strong>Backlog Items:</strong> {sprint.backlogItems?.length || 0}
                   </div>
-                  {sprint.goal && (
-                    <div style={styles.infoItem}>
-                      <strong>Goal:</strong> {sprint.goal}
-                    </div>
-                  )}
-                  {sprint.managers && sprint.managers.length > 0 && (
-                    <div style={styles.infoItem}>
-                      <strong>Managers:</strong> {sprint.managers.map(m => m.name).join(', ')}
-                    </div>
-                  )}
                 </div>
 
                 {isExpanded && sprint.backlogItems && sprint.backlogItems.length > 0 && (
@@ -727,7 +762,7 @@ export default function SprintsPage() {
                   {/* Search Filter */}
                   <input
                     type="text"
-                    style={styles.searchInput}
+                    style={styles.modalSearchInput}
                     placeholder="Search backlogs by title or project..."
                     value={backlogSearch}
                     onChange={(e) => setBacklogSearch(e.target.value)}
@@ -838,10 +873,72 @@ const styles: { [key: string]: React.CSSProperties } = {
     cursor: 'pointer',
     transition: 'transform 0.2s',
   },
+  filterAndSearchRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: '16px',
+    marginBottom: '24px',
+    flexWrap: 'wrap',
+  },
   filterRow: {
     display: 'flex',
     gap: '12px',
-    marginBottom: '24px',
+    flex: 1,
+    minWidth: '0',
+    flexWrap: 'wrap',
+  },
+  searchContainer: {
+    position: 'relative',
+    width: '25%',
+    minWidth: '200px',
+    maxWidth: '300px',
+    flexShrink: 0,
+    boxSizing: 'border-box',
+  },
+  searchIcon: {
+    position: 'absolute',
+    left: '12px',
+    top: '50%',
+    transform: 'translateY(-50%)',
+    color: '#a0aec0',
+    pointerEvents: 'none' as const,
+  },
+  searchInput: {
+    width: '100%',
+    padding: '8px 40px 8px 36px',
+    border: '2px solid #e2e8f0',
+    borderRadius: '6px',
+    fontSize: '14px',
+    outline: 'none',
+    transition: 'border-color 0.2s',
+    fontFamily: 'inherit',
+    boxSizing: 'border-box',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  },
+  modalSearchInput: {
+    padding: '10px 12px',
+    border: '1px solid #e2e8f0',
+    borderRadius: '6px',
+    fontSize: '14px',
+    outline: 'none',
+    marginBottom: '12px',
+  },
+  clearSearchButton: {
+    position: 'absolute',
+    right: '12px',
+    top: '50%',
+    transform: 'translateY(-50%)',
+    background: 'transparent',
+    border: 'none',
+    color: '#a0aec0',
+    fontSize: '18px',
+    cursor: 'pointer',
+    padding: '4px 8px',
+    borderRadius: '4px',
+    transition: 'all 0.2s',
   },
   filterButton: {
     padding: '8px 16px',
@@ -1147,14 +1244,6 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontSize: '14px',
     fontWeight: '600',
     cursor: 'pointer',
-  },
-  searchInput: {
-    padding: '10px 12px',
-    border: '1px solid #e2e8f0',
-    borderRadius: '6px',
-    fontSize: '14px',
-    outline: 'none',
-    marginBottom: '12px',
   },
   backlogSelectionContainer: {
     maxHeight: '300px',

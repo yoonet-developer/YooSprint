@@ -29,11 +29,15 @@ export default function TasksPage() {
   const [filteredTasks, setFilteredTasks] = useState<Backlog[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('todo');
+  const [searchQuery, setSearchQuery] = useState('');
   const [currentUserId, setCurrentUserId] = useState<string>('');
   const [currentPage, setCurrentPage] = useState(1);
   const [highlightedTaskId, setHighlightedTaskId] = useState<string | null>(null);
-  const itemsPerPage = 4;
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
   const taskRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
+
+  // Dynamic items per page: 4 for list view, 8 for grid view (2 rows x 4 columns)
+  const itemsPerPage = viewMode === 'grid' ? 8 : 4;
 
   useEffect(() => {
     const userData = localStorage.getItem('user');
@@ -46,8 +50,12 @@ export default function TasksPage() {
 
   useEffect(() => {
     applyFilter();
-    setCurrentPage(1); // Reset to page 1 when filter changes
-  }, [tasks, filter]);
+    setCurrentPage(1); // Reset to page 1 when filter or search changes
+  }, [tasks, filter, searchQuery]);
+
+  useEffect(() => {
+    setCurrentPage(1); // Reset to page 1 when view mode changes
+  }, [viewMode]);
 
   // Handle taskId parameter - scroll to and highlight specific task
   useEffect(() => {
@@ -127,16 +135,32 @@ export default function TasksPage() {
   };
 
   const applyFilter = () => {
+    let filtered = tasks;
+
+    // Apply status filter
     if (filter === 'all') {
-      setFilteredTasks(tasks);
+      filtered = tasks;
     } else {
       const statusMap: { [key: string]: string } = {
         'todo': 'pending',
         'in-progress': 'in-progress',
         'completed': 'completed',
       };
-      setFilteredTasks(tasks.filter(t => t.taskStatus === statusMap[filter]));
+      filtered = tasks.filter(t => t.taskStatus === statusMap[filter]);
     }
+
+    // Apply search filter
+    if (searchQuery.trim() !== '') {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(t =>
+        t.title.toLowerCase().includes(query) ||
+        t.description?.toLowerCase().includes(query) ||
+        t.project.toLowerCase().includes(query) ||
+        t.sprint?.name.toLowerCase().includes(query)
+      );
+    }
+
+    setFilteredTasks(filtered);
   };
 
   // Pagination calculations
@@ -226,27 +250,92 @@ export default function TasksPage() {
             <h2 style={styles.title}>My Tasks</h2>
             <p style={styles.subtitle}>Tasks assigned to you in active sprints</p>
           </div>
+          <div style={styles.viewToggle}>
+            <button
+              style={{
+                ...styles.viewButton,
+                ...(viewMode === 'list' ? styles.viewButtonActive : {}),
+              }}
+              onClick={() => setViewMode('list')}
+              title="List View"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" viewBox="0 0 16 16">
+                <path fillRule="evenodd" d="M2.5 12a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5m0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5m0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5"/>
+              </svg>
+            </button>
+            <button
+              style={{
+                ...styles.viewButton,
+                ...(viewMode === 'grid' ? styles.viewButtonActive : {}),
+              }}
+              onClick={() => setViewMode('grid')}
+              title="Grid View"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" viewBox="0 0 16 16">
+                <path d="M1 2.5A1.5 1.5 0 0 1 2.5 1h3A1.5 1.5 0 0 1 7 2.5v3A1.5 1.5 0 0 1 5.5 7h-3A1.5 1.5 0 0 1 1 5.5zm8 0A1.5 1.5 0 0 1 10.5 1h3A1.5 1.5 0 0 1 15 2.5v3A1.5 1.5 0 0 1 13.5 7h-3A1.5 1.5 0 0 1 9 5.5zM1 10.5A1.5 1.5 0 0 1 2.5 9h3A1.5 1.5 0 0 1 7 10.5v3A1.5 1.5 0 0 1 5.5 15h-3A1.5 1.5 0 0 1 1 13.5zm8 0A1.5 1.5 0 0 1 10.5 9h3a1.5 1.5 0 0 1 1.5 1.5v3a1.5 1.5 0 0 1-1.5 1.5h-3A1.5 1.5 0 0 1 9 13.5z"/>
+              </svg>
+            </button>
+          </div>
         </div>
 
-        {/* Filters */}
-        <div style={styles.filterRow}>
-          {[
-            { key: 'all', label: 'All' },
-            { key: 'todo', label: 'To Do' },
-            { key: 'in-progress', label: 'In Progress' },
-            { key: 'completed', label: 'Completed' },
-          ].map((f) => (
-            <button
-              key={f.key}
+        {/* Filters and Search */}
+        <div style={styles.filterAndSearchRow}>
+          <div style={styles.filterRow}>
+            {[
+              { key: 'all', label: 'All' },
+              { key: 'todo', label: 'To Do' },
+              { key: 'in-progress', label: 'In Progress' },
+              { key: 'completed', label: 'Completed' },
+            ].map((f) => (
+              <button
+                key={f.key}
+                style={{
+                  ...styles.filterButton,
+                  ...(filter === f.key ? styles.filterButtonActive : {}),
+                }}
+                onClick={() => setFilter(f.key)}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Search Bar */}
+          <div style={styles.searchContainer}>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="16"
+              height="16"
+              fill="currentColor"
+              viewBox="0 0 16 16"
               style={{
-                ...styles.filterButton,
-                ...(filter === f.key ? styles.filterButtonActive : {}),
+                position: 'absolute',
+                left: '12px',
+                top: '50%',
+                transform: 'translateY(-50%)',
+                color: '#a0aec0',
+                pointerEvents: 'none'
               }}
-              onClick={() => setFilter(f.key)}
             >
-              {f.label}
-            </button>
-          ))}
+              <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z"/>
+            </svg>
+            <input
+              type="text"
+              style={styles.searchInput}
+              placeholder="Search tasks"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+            {searchQuery && (
+              <button
+                style={styles.clearSearchButton}
+                onClick={() => setSearchQuery('')}
+                title="Clear search"
+              >
+                ✕
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Pagination */}
@@ -279,7 +368,7 @@ export default function TasksPage() {
         )}
 
         {/* Tasks Grid */}
-        <div style={styles.tasksGrid}>
+        <div style={viewMode === 'grid' ? styles.tasksGridView : styles.tasksGrid}>
           {filteredTasks.length === 0 ? (
             <div style={styles.empty}>No tasks found</div>
           ) : (
@@ -288,7 +377,7 @@ export default function TasksPage() {
                 key={task._id}
                 ref={(el) => { taskRefs.current[task._id] = el; }}
                 style={{
-                  ...styles.taskCard,
+                  ...(viewMode === 'grid' ? styles.taskCardGrid : styles.taskCard),
                   ...(highlightedTaskId === task._id ? styles.highlightedCard : {}),
                 }}
               >
@@ -361,7 +450,35 @@ const styles: { [key: string]: React.CSSProperties } = {
     width: '100%',
   },
   header: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
     marginBottom: '24px',
+  },
+  viewToggle: {
+    display: 'flex',
+    gap: '8px',
+    background: '#f7fafc',
+    padding: '4px',
+    borderRadius: '8px',
+    border: '1px solid #e2e8f0',
+  },
+  viewButton: {
+    padding: '8px 12px',
+    border: 'none',
+    background: 'transparent',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    color: '#718096',
+    transition: 'all 0.2s',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  viewButtonActive: {
+    background: 'white',
+    color: '#FF6495',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
   },
   title: {
     fontSize: '32px',
@@ -375,10 +492,56 @@ const styles: { [key: string]: React.CSSProperties } = {
     color: '#718096',
     margin: 0,
   },
+  filterAndSearchRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: '16px',
+    marginBottom: '24px',
+    flexWrap: 'wrap',
+  },
   filterRow: {
     display: 'flex',
     gap: '12px',
-    marginBottom: '24px',
+    flex: 1,
+    minWidth: '0',
+    flexWrap: 'wrap',
+  },
+  searchContainer: {
+    position: 'relative',
+    width: '25%',
+    minWidth: '200px',
+    maxWidth: '300px',
+    flexShrink: 0,
+    boxSizing: 'border-box',
+  },
+  searchInput: {
+    width: '100%',
+    padding: '8px 40px 8px 36px',
+    border: '2px solid #e2e8f0',
+    borderRadius: '6px',
+    fontSize: '14px',
+    outline: 'none',
+    transition: 'border-color 0.2s',
+    fontFamily: 'inherit',
+    boxSizing: 'border-box',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  },
+  clearSearchButton: {
+    position: 'absolute',
+    right: '12px',
+    top: '50%',
+    transform: 'translateY(-50%)',
+    background: 'transparent',
+    border: 'none',
+    color: '#a0aec0',
+    fontSize: '18px',
+    cursor: 'pointer',
+    padding: '4px 8px',
+    borderRadius: '4px',
+    transition: 'all 0.2s',
   },
   filterButton: {
     padding: '8px 16px',
@@ -405,12 +568,27 @@ const styles: { [key: string]: React.CSSProperties } = {
     overflowY: 'auto',
     paddingRight: '8px',
   },
+  tasksGridView: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))',
+    gap: '20px',
+    paddingRight: '8px',
+  },
   taskCard: {
     background: 'white',
     padding: '20px',
     borderRadius: '10px',
     boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
     transition: 'transform 0.2s, box-shadow 0.2s',
+  },
+  taskCardGrid: {
+    background: 'white',
+    padding: '20px',
+    borderRadius: '10px',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+    transition: 'transform 0.2s, box-shadow 0.2s',
+    display: 'flex',
+    flexDirection: 'column',
   },
   cardHeader: {
     display: 'flex',
