@@ -46,6 +46,28 @@ export async function PUT(
     const body = await request.json();
     const { id } = await params;
 
+    // If trying to manually set status to 'completed', validate that all backlogs are completed
+    // Only validate if status is being changed (not on other field updates)
+    if (body.status === 'completed') {
+      // Check current sprint status
+      const currentSprint = await Sprint.findById(id);
+
+      // Only validate if sprint is NOT already completed (prevents blocking automatic updates)
+      if (currentSprint && currentSprint.status !== 'completed') {
+        const backlogItems = await Backlog.find({ sprint: id });
+        const incompleteTasks = backlogItems.filter(
+          (backlog) => backlog.taskStatus !== 'completed'
+        );
+
+        if (incompleteTasks.length > 0) {
+          return errorResponse(
+            `Cannot mark sprint as completed. There are ${incompleteTasks.length} incomplete task(s) in this sprint. Please complete all tasks before marking the sprint as completed.`,
+            400
+          );
+        }
+      }
+    }
+
     const sprint = await Sprint.findByIdAndUpdate(
       id,
       body,

@@ -32,6 +32,7 @@ export function successResponse(data: any, status: number = 200) {
 /**
  * Check if all backlog items in a sprint are completed
  * and automatically update the sprint status to 'completed'
+ * OR revert to 'active' if sprint is completed but has incomplete tasks
  */
 export async function checkAndUpdateSprintStatus(sprintId: string) {
   try {
@@ -47,12 +48,6 @@ export async function checkAndUpdateSprintStatus(sprintId: string) {
 
     console.log('[checkAndUpdateSprintStatus] Sprint status:', sprint.status);
 
-    // Don't update if already completed
-    if (sprint.status === 'completed') {
-      console.log('[checkAndUpdateSprintStatus] Sprint already completed');
-      return;
-    }
-
     // Get all backlog items for this sprint
     const backlogItems = await Backlog.find({ sprint: sprintId });
 
@@ -60,7 +55,7 @@ export async function checkAndUpdateSprintStatus(sprintId: string) {
 
     // If there are no backlog items, don't auto-complete
     if (backlogItems.length === 0) {
-      console.log('[checkAndUpdateSprintStatus] No backlog items, skipping auto-complete');
+      console.log('[checkAndUpdateSprintStatus] No backlog items, skipping auto-update');
       return;
     }
 
@@ -76,11 +71,17 @@ export async function checkAndUpdateSprintStatus(sprintId: string) {
 
     console.log('[checkAndUpdateSprintStatus] All completed?', allCompleted);
 
-    // If all are completed, update sprint status to completed
-    if (allCompleted) {
+    // If all are completed and sprint is not completed, mark as completed
+    if (allCompleted && sprint.status !== 'completed') {
       console.log('[checkAndUpdateSprintStatus] Updating sprint to completed');
       await Sprint.findByIdAndUpdate(sprintId, { status: 'completed' });
-      console.log('[checkAndUpdateSprintStatus] Sprint updated successfully');
+      console.log('[checkAndUpdateSprintStatus] Sprint updated to completed');
+    }
+    // If NOT all completed but sprint IS completed, revert to active
+    else if (!allCompleted && sprint.status === 'completed') {
+      console.log('[checkAndUpdateSprintStatus] Sprint is completed but has incomplete tasks, reverting to active');
+      await Sprint.findByIdAndUpdate(sprintId, { status: 'active' });
+      console.log('[checkAndUpdateSprintStatus] Sprint reverted to active');
     }
   } catch (error) {
     console.error('[checkAndUpdateSprintStatus] Error:', error);

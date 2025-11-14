@@ -528,8 +528,8 @@ export default function BacklogsPage() {
                   <p style={styles.description}>{backlog.description}</p>
                 )}
 
-                <div style={styles.cardMeta}>
-                  <div style={styles.metaLeft}>
+                <div style={viewMode === 'grid' ? styles.cardMetaGrid : styles.cardMeta}>
+                  <div style={viewMode === 'grid' ? styles.metaLeftGrid : styles.metaLeft}>
                     <div style={styles.metaItem}>
                       <strong>Assigned to:</strong> {backlog.assignee?.name || 'Unassigned'}
                     </div>
@@ -538,10 +538,10 @@ export default function BacklogsPage() {
                     </div>
                   </div>
                   {currentUser?.role !== 'member' && (
-                    <div style={styles.cardActions}>
+                    <div style={viewMode === 'grid' ? styles.cardActionsGrid : styles.cardActions}>
                       {backlog.status === 'backlog' && sprints.length > 0 && (
                         <select
-                          style={styles.sprintSelect}
+                          style={viewMode === 'grid' ? styles.sprintSelectGrid : styles.sprintSelect}
                           onChange={(e) => {
                             if (e.target.value) {
                               handleMoveToSprint(backlog._id, e.target.value);
@@ -559,16 +559,16 @@ export default function BacklogsPage() {
                       )}
                       {backlog.sprint && (
                         <button
-                          style={styles.removeSprintButton}
+                          style={viewMode === 'grid' ? styles.removeSprintButtonGrid : styles.removeSprintButton}
                           onClick={() => openRemoveConfirmModal(backlog)}
                         >
                           Remove from Sprint
                         </button>
                       )}
-                      <button style={styles.actionButton} onClick={() => handleEdit(backlog)}>
+                      <button style={viewMode === 'grid' ? styles.actionButtonGrid : styles.actionButton} onClick={() => handleEdit(backlog)}>
                         Edit
                       </button>
-                      <button style={styles.deleteButton} onClick={() => handleDelete(backlog)}>
+                      <button style={viewMode === 'grid' ? styles.deleteButtonGrid : styles.deleteButton} onClick={() => handleDelete(backlog)}>
                         Delete
                       </button>
                     </div>
@@ -915,7 +915,8 @@ const styles: { [key: string]: React.CSSProperties } = {
   backlogGridView: {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))',
-    gap: '20px',
+    columnGap: '32px',
+    rowGap: '60px',
   },
   backlogCard: {
     background: 'white',
@@ -932,6 +933,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     transition: 'transform 0.2s, box-shadow 0.2s',
     display: 'flex',
     flexDirection: 'column',
+    height: '100%',
+    minHeight: '300px',
   },
   cardHeader: {
     display: 'flex',
@@ -964,6 +967,11 @@ const styles: { [key: string]: React.CSSProperties } = {
     color: '#718096',
     marginBottom: '16px',
     lineHeight: '1.5',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    display: '-webkit-box',
+    WebkitLineClamp: 3,
+    WebkitBoxOrient: 'vertical',
   },
   cardMeta: {
     display: 'flex',
@@ -973,12 +981,28 @@ const styles: { [key: string]: React.CSSProperties } = {
     paddingTop: '16px',
     gap: '16px',
   },
+  cardMetaGrid: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '12px',
+    marginTop: 'auto',
+    paddingTop: '16px',
+  },
   metaLeft: {
     display: 'flex',
     flexDirection: 'column',
     gap: '6px',
     fontSize: '14px',
     color: '#4a5568',
+  },
+  metaLeftGrid: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
+    fontSize: '14px',
+    color: '#4a5568',
+    paddingBottom: '12px',
+    borderBottom: '1px solid #e2e8f0',
   },
   metaItem: {
     display: 'flex',
@@ -990,6 +1014,13 @@ const styles: { [key: string]: React.CSSProperties } = {
     flexWrap: 'wrap',
     alignItems: 'center',
   },
+  cardActionsGrid: {
+    display: 'flex',
+    flexDirection: 'row',
+    gap: '8px',
+    width: '100%',
+    flexWrap: 'wrap',
+  },
   actionButton: {
     padding: '6px 14px',
     border: '1px solid #667eea',
@@ -999,6 +1030,18 @@ const styles: { [key: string]: React.CSSProperties } = {
     cursor: 'pointer',
     fontSize: '13px',
     fontWeight: '500',
+  },
+  actionButtonGrid: {
+    padding: '8px 14px',
+    border: '1px solid #667eea',
+    background: 'white',
+    color: '#667eea',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontSize: '13px',
+    fontWeight: '500',
+    flex: '1',
+    textAlign: 'center',
   },
   sprintSelect: {
     padding: '6px 14px',
@@ -1011,6 +1054,20 @@ const styles: { [key: string]: React.CSSProperties } = {
     cursor: 'pointer',
     transition: 'all 0.2s',
     outline: 'none',
+  },
+  sprintSelectGrid: {
+    padding: '8px 14px',
+    border: '2px solid #d3d3d3',
+    background: 'white',
+    color: '#879BFF',
+    borderRadius: '6px',
+    fontSize: '13px',
+    fontWeight: '600',
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+    outline: 'none',
+    flex: '1',
+    textAlign: 'center',
   },
   selectOption: {
     padding: '10px 12px',
@@ -1027,6 +1084,18 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontSize: '13px',
     fontWeight: '500',
   },
+  deleteButtonGrid: {
+    padding: '8px 14px',
+    border: '1px solid #f56565',
+    background: 'white',
+    color: '#f56565',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontSize: '13px',
+    fontWeight: '500',
+    flex: '1',
+    textAlign: 'center',
+  },
   removeSprintButton: {
     padding: '6px 14px',
     border: '1px solid #879BFF',
@@ -1036,6 +1105,18 @@ const styles: { [key: string]: React.CSSProperties } = {
     cursor: 'pointer',
     fontSize: '13px',
     fontWeight: '500',
+  },
+  removeSprintButtonGrid: {
+    padding: '8px 14px',
+    border: '1px solid #879BFF',
+    background: 'white',
+    color: '#879BFF',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontSize: '13px',
+    fontWeight: '500',
+    flex: '1',
+    textAlign: 'center',
   },
   loading: {
     textAlign: 'center',

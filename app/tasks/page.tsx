@@ -20,6 +20,7 @@ interface Backlog {
     endDate: string;
   };
   createdAt: string;
+  updatedAt?: string;
 }
 
 export default function TasksPage() {
@@ -158,6 +159,15 @@ export default function TasksPage() {
         t.project.toLowerCase().includes(query) ||
         t.sprint?.name.toLowerCase().includes(query)
       );
+    }
+
+    // Sort completed tasks by most recent first
+    if (filter === 'completed') {
+      filtered = filtered.sort((a, b) => {
+        const dateA = new Date(a.updatedAt || a.createdAt).getTime();
+        const dateB = new Date(b.updatedAt || b.createdAt).getTime();
+        return dateB - dateA; // Descending order (most recent first)
+      });
     }
 
     setFilteredTasks(filtered);
@@ -571,7 +581,8 @@ const styles: { [key: string]: React.CSSProperties } = {
   tasksGridView: {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))',
-    gap: '20px',
+    columnGap: '32px',
+    rowGap: '60px',
     paddingRight: '8px',
   },
   taskCard: {
@@ -583,18 +594,20 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   taskCardGrid: {
     background: 'white',
-    padding: '20px',
+    padding: '24px',
     borderRadius: '10px',
     boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
     transition: 'transform 0.2s, box-shadow 0.2s',
     display: 'flex',
     flexDirection: 'column',
+    minHeight: '320px',
+    height: '100%',
   },
   cardHeader: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: '12px',
+    marginBottom: '16px',
     gap: '12px',
   },
   cardTitle: {
@@ -603,6 +616,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     color: '#2d3748',
     margin: 0,
     flex: 1,
+    wordBreak: 'break-word',
   },
   badges: {
     display: 'flex',
@@ -631,7 +645,13 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontSize: '14px',
     color: '#718096',
     marginBottom: '16px',
+    marginTop: '0',
     lineHeight: '1.5',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    display: '-webkit-box',
+    WebkitLineClamp: 3,
+    WebkitBoxOrient: 'vertical',
   },
   cardMeta: {
     display: 'flex',
@@ -640,6 +660,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     marginBottom: '16px',
     fontSize: '14px',
     color: '#4a5568',
+    flex: 1,
   },
   metaItem: {
     display: 'flex',
@@ -651,6 +672,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     gap: '12px',
     borderTop: '1px solid #e2e8f0',
     paddingTop: '16px',
+    marginTop: 'auto',
   },
   statusLabel: {
     fontSize: '14px',
