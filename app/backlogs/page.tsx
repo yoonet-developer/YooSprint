@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import AppLayout from '@/components/shared/AppLayout';
 
 interface Backlog {
@@ -73,6 +73,22 @@ export default function BacklogsPage() {
   const [projects, setProjects] = useState<string[]>([]);
   const [isAddingNewProject, setIsAddingNewProject] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
+  const [projectSearchQuery, setProjectSearchQuery] = useState('');
+  const [showProjectDropdown, setShowProjectDropdown] = useState(false);
+  const projectDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (projectDropdownRef.current && !projectDropdownRef.current.contains(event.target as Node)) {
+        setShowProjectDropdown(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
 
   useEffect(() => {
     // Get current user from localStorage
@@ -611,30 +627,69 @@ export default function BacklogsPage() {
                 <div style={styles.formGroup}>
                   <label style={styles.label}>Project *</label>
                   {!isAddingNewProject ? (
-                    <select
-                      style={styles.input}
-                      value={formData.project}
-                      onChange={(e) => {
-                        if (e.target.value === '__new__') {
-                          setIsAddingNewProject(true);
-                          setFormData({ ...formData, project: '' });
-                        } else {
-                          setFormData({ ...formData, project: e.target.value });
-                        }
-                      }}
-                      required
-                    >
-                      <option value="">Select a project...</option>
-                      {projects.map((p) => (
-                        <option key={p} value={p}>{p}</option>
-                      ))}
-                      <option value="__new__">+ Add New Project</option>
-                    </select>
-                  ) : (
-                    <div>
+                    <div ref={projectDropdownRef} style={{ position: 'relative' }}>
                       <input
                         type="text"
-                        style={styles.input}
+                        style={{ ...styles.input, width: '100%', boxSizing: 'border-box' }}
+                        value={projectSearchQuery || formData.project}
+                        onChange={(e) => {
+                          setProjectSearchQuery(e.target.value);
+                          setShowProjectDropdown(true);
+                        }}
+                        onFocus={() => setShowProjectDropdown(true)}
+                        placeholder="Search or select project..."
+                        required={!formData.project}
+                      />
+                      {showProjectDropdown && (
+                        <div style={styles.searchableDropdown}>
+                          {projects
+                            .filter((p) =>
+                              p.toLowerCase().includes(projectSearchQuery.toLowerCase())
+                            )
+                            .map((p) => (
+                              <div
+                                key={p}
+                                style={styles.dropdownItem}
+                                onClick={() => {
+                                  setFormData({ ...formData, project: p });
+                                  setProjectSearchQuery('');
+                                  setShowProjectDropdown(false);
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.backgroundColor = '#f7fafc';
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.backgroundColor = 'white';
+                                }}
+                              >
+                                {p}
+                              </div>
+                            ))}
+                          <div
+                            style={{ ...styles.dropdownItem, color: '#667eea', fontWeight: '500' }}
+                            onClick={() => {
+                              setIsAddingNewProject(true);
+                              setFormData({ ...formData, project: '' });
+                              setProjectSearchQuery('');
+                              setShowProjectDropdown(false);
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.backgroundColor = '#f7fafc';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.backgroundColor = 'white';
+                            }}
+                          >
+                            + Add New Project
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                      <input
+                        type="text"
+                        style={{ ...styles.input, flex: 1 }}
                         placeholder="Enter new project name"
                         value={formData.project}
                         onChange={(e) => setFormData({ ...formData, project: e.target.value })}
@@ -643,7 +698,7 @@ export default function BacklogsPage() {
                       />
                       <button
                         type="button"
-                        style={styles.backToSelectButton}
+                        style={{ ...styles.backToSelectButton, marginTop: 0, whiteSpace: 'nowrap', padding: '10px 12px' }}
                         onClick={() => {
                           setIsAddingNewProject(false);
                           setFormData({ ...formData, project: '' });
@@ -1211,6 +1266,26 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontWeight: '500',
     cursor: 'pointer',
     transition: 'all 0.2s',
+  },
+  searchableDropdown: {
+    position: 'absolute',
+    top: '100%',
+    left: 0,
+    right: 0,
+    background: 'white',
+    border: '1px solid #e2e8f0',
+    borderRadius: '6px',
+    marginTop: '4px',
+    maxHeight: '200px',
+    overflowY: 'auto',
+    zIndex: 1000,
+    boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+  },
+  dropdownItem: {
+    padding: '10px 12px',
+    cursor: 'pointer',
+    transition: 'background-color 0.2s',
+    fontSize: '14px',
   },
   formActions: {
     display: 'flex',

@@ -46,6 +46,14 @@ export default function RootLayout({
             scrollbar-width: thin;
             scrollbar-color: #879BFF #f1f1f1;
           }
+
+          /* Ensure all inputs, textareas, selects, and buttons use Poppins font */
+          input,
+          textarea,
+          select,
+          button {
+            font-family: inherit;
+          }
         `}</style>
       </head>
       <body style={{ margin: 0 }}>{children}</body>

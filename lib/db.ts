@@ -41,7 +41,19 @@ async function dbConnect(): Promise<typeof mongoose> {
       .catch((error) => {
         console.error('MongoDB Connection Error:', error.message);
         cached.promise = null;
-        throw new Error('Failed to connect to MongoDB. Make sure MongoDB is running on localhost:27017');
+
+        // Provide more helpful error messages based on connection type
+        const isAtlas = MONGODB_URI.includes('mongodb+srv://');
+        const errorMsg = isAtlas
+          ? `Failed to connect to MongoDB Atlas. Please check:\n` +
+            `- Your internet connection\n` +
+            `- Database credentials are correct\n` +
+            `- Your IP address is whitelisted in MongoDB Atlas\n` +
+            `- The cluster is running (not paused)\n` +
+            `Error: ${error.message}`
+          : `Failed to connect to MongoDB on localhost:27017. Make sure MongoDB is running.\nError: ${error.message}`;
+
+        throw new Error(errorMsg);
       });
   }
 

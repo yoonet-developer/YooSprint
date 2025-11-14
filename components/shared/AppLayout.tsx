@@ -20,7 +20,6 @@ export default function AppLayout({ children }: AppLayoutProps) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [showUserDropdown, setShowUserDropdown] = useState(false);
-  const [showTimelineDropdown, setShowTimelineDropdown] = useState(false);
   const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
   const [passwordForm, setPasswordForm] = useState({
     currentPassword: '',
@@ -162,8 +161,6 @@ export default function AppLayout({ children }: AppLayoutProps) {
     ? [...baseNavItems, ...adminManagerItems]
     : baseNavItems;
 
-  const isTimelineActive = pathname?.startsWith('/timeline');
-
   return (
     <div style={styles.container}>
       {/* Header */}
@@ -207,61 +204,18 @@ export default function AppLayout({ children }: AppLayoutProps) {
             </li>
           ))}
 
-          {/* Timeline Dropdown for Admin/Manager */}
+          {/* Timeline for Admin/Manager */}
           {(user.role === 'admin' || user.role === 'manager') && (
             <li style={styles.navItem}>
-              <div
+              <Link
+                href="/timeline"
                 style={{
                   ...styles.navLink,
-                  ...(isTimelineActive ? styles.navLinkActive : {}),
-                  cursor: 'pointer',
-                  position: 'relative',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
+                  ...(pathname === '/timeline' ? styles.navLinkActive : {}),
                 }}
-                onClick={() => setShowTimelineDropdown(!showTimelineDropdown)}
               >
-                <span>Timeline</span>
-                <span style={{ fontSize: '10px' }}>{showTimelineDropdown ? '▲' : '▼'}</span>
-              </div>
-
-              {showTimelineDropdown && (
-                <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-                  <li style={{ margin: 0 }}>
-                    <Link
-                      href="/timeline?view=sprint"
-                      style={{
-                        display: 'block',
-                        padding: '12px 25px 12px 45px',
-                        color: 'white',
-                        textDecoration: 'none',
-                        fontSize: '14px',
-                        transition: 'all 0.3s',
-                      }}
-                      onClick={() => setShowTimelineDropdown(false)}
-                    >
-                      Sprint Timeline
-                    </Link>
-                  </li>
-                  <li style={{ margin: 0 }}>
-                    <Link
-                      href="/timeline?view=project"
-                      style={{
-                        display: 'block',
-                        padding: '12px 25px 12px 45px',
-                        color: 'white',
-                        textDecoration: 'none',
-                        fontSize: '14px',
-                        transition: 'all 0.3s',
-                      }}
-                      onClick={() => setShowTimelineDropdown(false)}
-                    >
-                      Project Timeline
-                    </Link>
-                  </li>
-                </ul>
-              )}
+                Timeline
+              </Link>
             </li>
           )}
         </ul>
@@ -458,6 +412,15 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontWeight: 'bold',
     borderLeft: '4px solid white',
     paddingLeft: '21px',
+  },
+  subNavLink: {
+    display: 'block',
+    padding: '12px 25px 12px 45px',
+    color: 'white',
+    textDecoration: 'none',
+    fontSize: '14px',
+    transition: 'all 0.3s',
+    background: 'transparent',
   },
   mainContent: {
     padding: '30px',
