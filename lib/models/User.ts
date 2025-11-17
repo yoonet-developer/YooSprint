@@ -31,12 +31,16 @@ const userSchema = new mongoose.Schema({
   },
   role: {
     type: String,
-    enum: ['admin', 'manager', 'member'],
+    enum: ['super-admin', 'admin', 'manager', 'member'],
     default: 'member'
   },
   position: {
     type: String,
     default: 'Team Member'
+  },
+  department: {
+    type: String,
+    default: ''
   },
   avatar: {
     type: String,

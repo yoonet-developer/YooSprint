@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import AppLayout from '@/components/shared/AppLayout';
 
@@ -12,6 +12,11 @@ interface Backlog {
   project: string;
   storyPoints: number;
   taskStatus: 'pending' | 'in-progress' | 'completed';
+  assignee?: {
+    _id: string;
+    name: string;
+    email: string;
+  };
   sprint?: {
     _id: string;
     name: string;
@@ -23,7 +28,7 @@ interface Backlog {
   updatedAt?: string;
 }
 
-export default function TasksPage() {
+function TasksPageContent() {
   const searchParams = useSearchParams();
   const taskId = searchParams.get('taskId');
   const [tasks, setTasks] = useState<Backlog[]>([]);
@@ -737,3 +742,11 @@ const styles: { [key: string]: React.CSSProperties } = {
     animation: 'pulse 2s ease-in-out',
   },
 };
+
+export default function TasksPage() {
+  return (
+    <Suspense fallback={<AppLayout><div style={styles.loading}>Loading your tasks...</div></AppLayout>}>
+      <TasksPageContent />
+    </Suspense>
+  );
+}

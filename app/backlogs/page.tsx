@@ -49,7 +49,7 @@ export default function BacklogsPage() {
   const [sprints, setSprints] = useState<Sprint[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [filter, setFilter] = useState('backlog');
+  const [filter, setFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
@@ -125,6 +125,8 @@ export default function BacklogsPage() {
         // Extract unique projects
         const uniqueProjects = Array.from(new Set(data.backlogs.map((b: Backlog) => b.project)));
         setProjects(uniqueProjects as string[]);
+      } else {
+        console.error('[Frontend] Failed to fetch backlogs:', data.message);
       }
     } catch (error) {
       console.error('Error fetching backlogs:', error);
@@ -234,12 +236,14 @@ export default function BacklogsPage() {
       });
 
       const data = await response.json();
+
       if (data.success) {
         setShowModal(false);
         resetForm();
-        fetchBacklogs();
+        await fetchBacklogs();
         showSuccess(editingBacklog ? 'Backlog item updated successfully!' : 'Backlog item created successfully!');
       } else {
+        console.error('[Frontend] Failed to save backlog:', data.message);
         alert(data.message || 'Error saving backlog');
       }
     } catch (error) {
@@ -734,11 +738,13 @@ export default function BacklogsPage() {
                     onChange={(e) => setFormData({ ...formData, assignee: e.target.value })}
                   >
                     <option value="">Unassigned</option>
-                    {users.map((user) => (
-                      <option key={user._id} value={user._id}>
-                        {user.name} ({user.position})
-                      </option>
-                    ))}
+                    {users
+                      .filter(user => user.role !== 'super admin' && user.role !== 'super-admin' && user.role !== 'admin')
+                      .map((user) => (
+                        <option key={user._id} value={user._id}>
+                          {user.name} ({user.position})
+                        </option>
+                      ))}
                   </select>
                 </div>
 

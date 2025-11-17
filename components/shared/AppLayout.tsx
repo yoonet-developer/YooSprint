@@ -157,7 +157,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
     { label: 'Team', href: '/team' },
   ];
 
-  const navItems = user.role === 'admin' || user.role === 'manager'
+  const navItems = user.role === 'admin' || user.role === 'super-admin' || user.role === 'manager'
     ? [...baseNavItems, ...adminManagerItems]
     : baseNavItems;
 
@@ -205,7 +205,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
           ))}
 
           {/* Timeline for Admin/Manager */}
-          {(user.role === 'admin' || user.role === 'manager') && (
+          {(user.role === 'admin' || user.role === 'super-admin' || user.role === 'manager') && (
             <li style={styles.navItem}>
               <Link
                 href="/timeline"
@@ -215,6 +215,21 @@ export default function AppLayout({ children }: AppLayoutProps) {
                 }}
               >
                 Timeline
+              </Link>
+            </li>
+          )}
+
+          {/* Audit Trail for Admin/Super-Admin only */}
+          {(user.role === 'admin' || user.role === 'super-admin') && (
+            <li style={styles.navItem}>
+              <Link
+                href="/audit-trail"
+                style={{
+                  ...styles.navLink,
+                  ...(pathname === '/audit-trail' ? styles.navLinkActive : {}),
+                }}
+              >
+                Audit Trail
               </Link>
             </li>
           )}

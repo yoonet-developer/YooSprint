@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
     if (userCount > 0) {
       const user = await verifyAuth(request);
 
-      if (!user || user.role !== 'admin') {
+      if (!user || (user.role !== 'admin' && user.role !== 'super-admin')) {
         return NextResponse.json(
           { success: false, message: 'Only administrators can add new users' },
           { status: 403 }
@@ -79,6 +79,7 @@ export async function POST(request: NextRequest) {
         email: newUser.email,
         role: newUser.role,
         position: newUser.position,
+        department: newUser.department,
       },
     }, { status: 201 });
 

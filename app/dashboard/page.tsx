@@ -122,7 +122,7 @@ export default function DashboardPage() {
         // Filter data based on user role
         const isTeamMember = user?.role === 'member';
         const isManager = user?.role === 'manager';
-        const isAdmin = user?.role === 'admin';
+        const isAdmin = user?.role === 'admin' || user?.role === 'super-admin';
 
         // Filter sprints for managers
         const filteredSprints = isManager
@@ -244,7 +244,7 @@ export default function DashboardPage() {
     return null;
   }
 
-  const isAdminOrManager = user.role === 'admin' || user.role === 'manager';
+  const isAdminOrManager = user.role === 'admin' || user.role === 'super-admin' || user.role === 'manager';
 
   return (
     <AppLayout>

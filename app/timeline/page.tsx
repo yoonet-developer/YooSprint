@@ -275,8 +275,8 @@ export default function TimelinePage() {
         return true; // Include backlogs not in sprint
       }
 
-      const sprintId = b.sprint?._id || b.sprint;
-      return managedSprintIds.includes(sprintId);
+      const sprintId = typeof b.sprint === 'string' ? b.sprint : b.sprint?._id;
+      return sprintId ? managedSprintIds.includes(sprintId) : false;
     });
 
     // Apply project filter if a specific project is selected
@@ -414,7 +414,7 @@ export default function TimelinePage() {
 
                 projectBacklogs.forEach((backlog) => {
                   if (backlog.sprint) {
-                    const sprintId = backlog.sprint._id || backlog.sprint;
+                    const sprintId = typeof backlog.sprint === 'string' ? backlog.sprint : backlog.sprint._id;
                     if (!sprintGroups[sprintId]) {
                       sprintGroups[sprintId] = {
                         sprint: backlog.sprint,
@@ -462,7 +462,7 @@ export default function TimelinePage() {
                             ...styles.sprintGroupContainer,
                             ...(highlightedSprintId === sprintId ? styles.highlightedSprint : {})
                           }}
-                          ref={(el) => (sprintRefs.current[sprintId] = el)}
+                          ref={(el) => { sprintRefs.current[sprintId] = el; }}
                         >
                           {/* Sprint Header */}
                           <div style={{
@@ -490,11 +490,11 @@ export default function TimelinePage() {
                             const assigneePosition = backlog.assignee?.position || '';
                             const createdDate = new Date(backlog.createdAt);
 
-                            const displayStatus = backlog.taskStatus || backlog.status || 'pending';
+                            const displayStatus = backlog.taskStatus || 'pending';
                             let statusLabel = displayStatus.replace('-', ' ');
                             if (displayStatus === 'pending') {
                               statusLabel = 'to do';
-                            } else if (displayStatus === 'done') {
+                            } else if (displayStatus === 'completed') {
                               statusLabel = 'completed';
                             }
 
@@ -504,7 +504,7 @@ export default function TimelinePage() {
                             if (displayStatus === 'in-progress') {
                               statusColor = '#879BFF';
                               statusTextColor = 'white';
-                            } else if (displayStatus === 'completed' || displayStatus === 'done') {
+                            } else if (displayStatus === 'completed') {
                               statusColor = '#48bb78';
                               statusTextColor = 'white';
                             }
@@ -588,7 +588,7 @@ export default function TimelinePage() {
                           const assigneePosition = backlog.assignee?.position || '';
                           const createdDate = new Date(backlog.createdAt);
 
-                          const displayStatus = backlog.taskStatus || backlog.status || 'pending';
+                          const displayStatus: string = backlog.taskStatus || backlog.status || 'pending';
                           let statusLabel = displayStatus.replace('-', ' ');
                           if (displayStatus === 'pending') {
                             statusLabel = 'to do';
@@ -747,7 +747,7 @@ export default function TimelinePage() {
               let filteredBacklogs = backlogs.filter((b) => {
                 if (userRole === 'admin') return true;
                 if (!b.sprint) return true;
-                const sprintId = b.sprint?._id || b.sprint;
+                const sprintId = b.sprint._id;
                 return managedSprintIds.includes(sprintId);
               });
 
@@ -1272,9 +1272,6 @@ const styles: { [key: string]: React.CSSProperties } = {
     background: 'rgba(255, 255, 255, 0.25)',
   },
   status_planned: {
-    background: 'rgba(255, 255, 255, 0.25)',
-  },
-  status_completed: {
     background: 'rgba(255, 255, 255, 0.25)',
   },
   info: {

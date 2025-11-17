@@ -10,6 +10,7 @@ interface Backlog {
   priority: string;
   project: string;
   taskStatus: string;
+  sprint?: string | { _id: string; name: string };
   assignee?: {
     name: string;
     email: string;
@@ -53,7 +54,6 @@ export default function SprintsPage() {
   const [successMessage, setSuccessMessage] = useState('');
   const [showIncompleteWarningModal, setShowIncompleteWarningModal] = useState(false);
   const [incompleteWarningMessage, setIncompleteWarningMessage] = useState('');
-  const [viewingSprintBacklogs, setViewingSprintBacklogs] = useState<Sprint | null>(null);
   const [deletingSprint, setDeletingSprint] = useState<Sprint | null>(null);
   const [editingSprint, setEditingSprint] = useState<Sprint | null>(null);
   const [backlogSearch, setBacklogSearch] = useState('');
@@ -152,8 +152,8 @@ export default function SprintsPage() {
       });
       const data = await response.json();
       if (data.success) {
-        // Filter for admins and managers only
-        setUsers(data.users.filter((u: User) => u.role === 'admin' || u.role === 'manager'));
+        // Filter for managers only
+        setUsers(data.users.filter((u: User) => u.role === 'manager'));
       }
     } catch (error) {
       console.error('Error fetching users:', error);
@@ -294,7 +294,6 @@ export default function SprintsPage() {
   };
 
   const openBacklogsModal = (sprint: Sprint) => {
-    setViewingSprintBacklogs(sprint);
     setEditingSprint(sprint);
     setFormData({
       name: sprint.name,
@@ -382,10 +381,10 @@ export default function SprintsPage() {
     return backlogs
       .filter(b => {
         // Show backlogs that are:
-        // 1. Not in any sprint (status !== 'in-sprint'), OR
+        // 1. Not in any sprint (!b.sprint), OR
         // 2. Already selected in the current form (being added/edited in this sprint), OR
         // 3. Were originally in this sprint when editing (from editingSprint.backlogItems)
-        if (b.status !== 'in-sprint') {
+        if (!b.sprint) {
           return true; // Show backlogs not in any sprint
         }
         // If backlog is in a sprint, show it if:
@@ -643,7 +642,7 @@ export default function SprintsPage() {
         </div>
 
         {/* Backlogs Modal with Sprint Edit */}
-        {showBacklogsModal && viewingSprintBacklogs && (
+        {showBacklogsModal && editingSprint && (
           <div style={styles.modalOverlay} onClick={() => setShowBacklogsModal(false)}>
             <div style={styles.backlogsModal} onClick={(e) => e.stopPropagation()}>
               <div style={styles.backlogsModalHeader}>

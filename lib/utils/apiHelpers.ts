@@ -15,6 +15,79 @@ export async function requireAuth(request: NextRequest) {
   return user;
 }
 
+/**
+ * Get department filter for queries
+ * - Super-admin: See everything
+ * - Admin: See everything in their department
+ * - Manager: See everything in their department
+ * - Member: Only see what they created or what is assigned to them
+ */
+export function getDepartmentFilter(user: any) {
+  const filter: any = {};
+
+  if (user.role === 'super-admin') {
+    // Super-admin sees everything
+    return filter;
+  }
+
+  if (user.role === 'admin' || user.role === 'manager') {
+    // Admin and Manager see everything in their department
+    if (user.department) {
+      // Show items in their department OR items with no department (empty string)
+      filter.$or = [
+        { department: user.department },
+        { department: '' },
+        { department: { $exists: false } }
+      ];
+    }
+    // If user has no department, show everything (empty filter)
+    return filter;
+  }
+
+  // Member: only see what they created or what is assigned to them
+  const conditions: any[] = [
+    { createdBy: user._id }, // Items they created
+    { assignee: user._id },  // Items assigned to them (for backlogs/tasks)
+    { managers: user._id }   // Sprints where they are a manager
+  ];
+
+  // Members can only see sprints/backlogs with status "active" or "completed"
+  if (user.role === 'member') {
+    // For sprints: only show active or completed ones they're involved in
+    // For backlogs/tasks: only show active or completed ones assigned to them or created by them
+    filter.$and = [
+      { $or: conditions },
+      {
+        $or: [
+          { status: { $in: ['active', 'completed'] } },      // For sprints
+          { taskStatus: { $in: ['active', 'completed'] } },  // For backlogs
+          { status: { $exists: false } },                     // For tasks without status field
+          { taskStatus: { $exists: false } }                  // For items without taskStatus field
+        ]
+      }
+    ];
+  }
+
+  // Also filter by department if user has one
+  if (user.department) {
+    filter.department = user.department;
+  }
+
+  return filter;
+}
+
+/**
+ * Check if user has access to a resource based on department
+ * Only super-admin can access resources from any department
+ * All other roles can only access resources from their own department
+ */
+export function canAccessDepartment(user: any, resourceDepartment: string): boolean {
+  if (user.role === 'super-admin') {
+    return true;
+  }
+  return user.department === resourceDepartment;
+}
+
 export function errorResponse(message: string, status: number = 500) {
   return NextResponse.json(
     { success: false, message },
@@ -36,52 +109,33 @@ export function successResponse(data: any, status: number = 200) {
  */
 export async function checkAndUpdateSprintStatus(sprintId: string) {
   try {
-    console.log('[checkAndUpdateSprintStatus] Checking sprint:', sprintId);
-
     // Get the sprint
     const sprint = await Sprint.findById(sprintId);
 
     if (!sprint) {
-      console.log('[checkAndUpdateSprintStatus] Sprint not found');
       return;
     }
-
-    console.log('[checkAndUpdateSprintStatus] Sprint status:', sprint.status);
 
     // Get all backlog items for this sprint
     const backlogItems = await Backlog.find({ sprint: sprintId });
 
-    console.log('[checkAndUpdateSprintStatus] Found', backlogItems.length, 'backlog items');
-
     // If there are no backlog items, don't auto-complete
     if (backlogItems.length === 0) {
-      console.log('[checkAndUpdateSprintStatus] No backlog items, skipping auto-update');
       return;
     }
-
-    // Log each backlog item's status
-    backlogItems.forEach((item, index) => {
-      console.log(`[checkAndUpdateSprintStatus] Backlog ${index + 1}: ${item.title} - taskStatus: ${item.taskStatus}`);
-    });
 
     // Check if all backlog items are completed
     const allCompleted = backlogItems.every(
       (item) => item.taskStatus === 'completed'
     );
 
-    console.log('[checkAndUpdateSprintStatus] All completed?', allCompleted);
-
     // If all are completed and sprint is not completed, mark as completed
     if (allCompleted && sprint.status !== 'completed') {
-      console.log('[checkAndUpdateSprintStatus] Updating sprint to completed');
       await Sprint.findByIdAndUpdate(sprintId, { status: 'completed' });
-      console.log('[checkAndUpdateSprintStatus] Sprint updated to completed');
     }
     // If NOT all completed but sprint IS completed, revert to active
     else if (!allCompleted && sprint.status === 'completed') {
-      console.log('[checkAndUpdateSprintStatus] Sprint is completed but has incomplete tasks, reverting to active');
       await Sprint.findByIdAndUpdate(sprintId, { status: 'active' });
-      console.log('[checkAndUpdateSprintStatus] Sprint reverted to active');
     }
   } catch (error) {
     console.error('[checkAndUpdateSprintStatus] Error:', error);
