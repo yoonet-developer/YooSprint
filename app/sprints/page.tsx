@@ -10,6 +10,7 @@ interface Backlog {
   priority: string;
   project: string;
   taskStatus: string;
+  sprint?: string | { _id: string; name: string };
   assignee?: {
     name: string;
     email: string;
@@ -43,13 +44,22 @@ export default function SprintsPage() {
   const [backlogs, setBacklogs] = useState<Backlog[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [filter, setFilter] = useState('active');
+  const [searchQuery, setSearchQuery] = useState('');
   const [showModal, setShowModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showBacklogsModal, setShowBacklogsModal] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [successMessage, setSuccessMessage] = useState('');
+  const [showIncompleteWarningModal, setShowIncompleteWarningModal] = useState(false);
+  const [incompleteWarningMessage, setIncompleteWarningMessage] = useState('');
+  const [deletingSprint, setDeletingSprint] = useState<Sprint | null>(null);
   const [editingSprint, setEditingSprint] = useState<Sprint | null>(null);
   const [backlogSearch, setBacklogSearch] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 4;
-  const [expandedSprints, setExpandedSprints] = useState<{ [key: string]: boolean }>({});
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
+  const itemsPerPage = viewMode === 'grid' ? 8 : 4;
   const [formData, setFormData] = useState({
     name: '',
     goal: '',
@@ -61,6 +71,12 @@ export default function SprintsPage() {
   });
 
   useEffect(() => {
+    // Get current user from localStorage
+    const userData = localStorage.getItem('user');
+    if (userData) {
+      setCurrentUser(JSON.parse(userData));
+    }
+
     fetchSprints();
     fetchBacklogs();
     fetchUsers();
@@ -68,8 +84,12 @@ export default function SprintsPage() {
 
   useEffect(() => {
     applyFilter();
-    setCurrentPage(1); // Reset to page 1 when filter changes
-  }, [sprints, filter]);
+    setCurrentPage(1); // Reset to page 1 when filter or search changes
+  }, [sprints, filter, searchQuery]);
+
+  useEffect(() => {
+    setCurrentPage(1); // Reset to page 1 when view mode changes
+  }, [viewMode]);
 
   const fetchSprints = async () => {
     try {
@@ -115,7 +135,7 @@ export default function SprintsPage() {
       });
       const data = await response.json();
       if (data.success) {
-        setBacklogs(data.backlogs.filter((b: Backlog) => b.taskStatus !== 'completed'));
+        setBacklogs(data.backlogs);
       }
     } catch (error) {
       console.error('Error fetching backlogs:', error);
@@ -132,20 +152,44 @@ export default function SprintsPage() {
       });
       const data = await response.json();
       if (data.success) {
-        // Filter for admins and managers only
-        setUsers(data.users.filter((u: User) => u.role === 'admin' || u.role === 'manager'));
+        // Filter for managers only
+        setUsers(data.users.filter((u: User) => u.role === 'manager'));
       }
     } catch (error) {
       console.error('Error fetching users:', error);
     }
   };
 
+  const showSuccess = (message: string) => {
+    setSuccessMessage(message);
+    setShowSuccessModal(true);
+    setTimeout(() => {
+      setShowSuccessModal(false);
+    }, 3000);
+  };
+
   const applyFilter = () => {
+    let filtered = sprints;
+
+    // Apply status filter
     if (filter === 'all') {
-      setFilteredSprints(sprints);
+      filtered = sprints;
     } else {
-      setFilteredSprints(sprints.filter(s => s.status === filter));
+      filtered = sprints.filter(s => s.status === filter);
     }
+
+    // Apply search filter
+    if (searchQuery.trim() !== '') {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(s =>
+        s.name.toLowerCase().includes(query) ||
+        s.goal?.toLowerCase().includes(query) ||
+        s.project?.toLowerCase().includes(query) ||
+        s.managers?.some(m => m.name.toLowerCase().includes(query))
+      );
+    }
+
+    setFilteredSprints(filtered);
   };
 
   const handleCreateSprint = async (e: React.FormEvent) => {
@@ -215,11 +259,19 @@ export default function SprintsPage() {
         }
 
         setShowModal(false);
+        setShowBacklogsModal(false);
         resetForm();
         fetchSprints();
         fetchBacklogs();
+        showSuccess(editingSprint ? 'Sprint updated successfully!' : 'Sprint created successfully!');
       } else {
-        alert(data.message || 'Error saving sprint');
+        // Show warning modal for incomplete tasks error
+        if (data.message && data.message.includes('incomplete task')) {
+          setIncompleteWarningMessage(data.message);
+          setShowIncompleteWarningModal(true);
+        } else {
+          alert(data.message || 'Error saving sprint');
+        }
       }
     } catch (error) {
       console.error('Error saving sprint:', error);
@@ -241,19 +293,31 @@ export default function SprintsPage() {
     setShowModal(true);
   };
 
-  const toggleSprintExpansion = (sprintId: string) => {
-    setExpandedSprints((prev) => ({
-      ...prev,
-      [sprintId]: !prev[sprintId],
-    }));
+  const openBacklogsModal = (sprint: Sprint) => {
+    setEditingSprint(sprint);
+    setFormData({
+      name: sprint.name,
+      goal: sprint.goal || '',
+      startDate: sprint.startDate.split('T')[0],
+      endDate: sprint.endDate.split('T')[0],
+      status: sprint.status,
+      backlogIds: sprint.backlogItems?.map(b => b._id) || [],
+      managerIds: sprint.managers?.map(m => m._id) || [],
+    });
+    setShowBacklogsModal(true);
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this sprint? All backlog items will be moved back to the backlog.')) return;
+  const openDeleteModal = (sprint: Sprint) => {
+    setDeletingSprint(sprint);
+    setShowDeleteModal(true);
+  };
+
+  const handleDelete = async () => {
+    if (!deletingSprint) return;
 
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch(`/api/sprints/${id}`, {
+      const response = await fetch(`/api/sprints/${deletingSprint._id}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -262,6 +326,8 @@ export default function SprintsPage() {
 
       const data = await response.json();
       if (data.success) {
+        setShowDeleteModal(false);
+        setDeletingSprint(null);
         fetchSprints();
         fetchBacklogs();
       } else {
@@ -313,7 +379,34 @@ export default function SprintsPage() {
 
   const getFilteredBacklogs = () => {
     return backlogs
-      .filter(b => b.taskStatus !== 'in-sprint' || (editingSprint && editingSprint.backlogItems?.some(item => item._id === b._id)))
+      .filter(b => {
+        // Show backlogs that are:
+        // 1. Not in any sprint (!b.sprint), OR
+        // 2. Already selected in the current form (being added/edited in this sprint), OR
+        // 3. Were originally in this sprint when editing (from editingSprint.backlogItems)
+        if (!b.sprint) {
+          return true; // Show backlogs not in any sprint
+        }
+        // If backlog is in a sprint, show it if:
+        // - It's currently selected in the form, OR
+        // - It was originally in this sprint (when editing)
+        if (formData.backlogIds.includes(b._id)) {
+          return true;
+        }
+        // If editing, also show backlogs that were originally in this sprint
+        if (editingSprint && editingSprint.backlogItems) {
+          return editingSprint.backlogItems.some(item => item._id === b._id);
+        }
+        return false;
+      })
+      .filter(b => {
+        // When editing a sprint (editingSprint exists), show completed backlogs
+        // When creating a new sprint, exclude completed backlogs
+        if (editingSprint) {
+          return true; // Show all backlogs including completed when editing
+        }
+        return b.taskStatus !== 'completed'; // Exclude completed backlogs when creating
+      })
       .filter(b =>
         backlogSearch === '' ||
         b.title.toLowerCase().includes(backlogSearch.toLowerCase()) ||
@@ -363,24 +456,86 @@ export default function SprintsPage() {
       <div style={styles.container}>
         <div style={styles.header}>
           <h2 style={styles.title}>Sprints</h2>
-          <button style={styles.primaryButton} onClick={openAddModal}>
-            + Create Sprint
-          </button>
+          <div style={styles.headerRight}>
+            <div style={styles.viewToggle}>
+              <button
+                style={{
+                  ...styles.viewButton,
+                  ...(viewMode === 'list' ? styles.viewButtonActive : {}),
+                }}
+                onClick={() => setViewMode('list')}
+                title="List View"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" viewBox="0 0 16 16">
+                  <path fillRule="evenodd" d="M2.5 12a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5m0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5m0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5"/>
+                </svg>
+              </button>
+              <button
+                style={{
+                  ...styles.viewButton,
+                  ...(viewMode === 'grid' ? styles.viewButtonActive : {}),
+                }}
+                onClick={() => setViewMode('grid')}
+                title="Grid View"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" viewBox="0 0 16 16">
+                  <path d="M1 2.5A1.5 1.5 0 0 1 2.5 1h3A1.5 1.5 0 0 1 7 2.5v3A1.5 1.5 0 0 1 5.5 7h-3A1.5 1.5 0 0 1 1 5.5zm8 0A1.5 1.5 0 0 1 10.5 1h3A1.5 1.5 0 0 1 15 2.5v3A1.5 1.5 0 0 1 13.5 7h-3A1.5 1.5 0 0 1 9 5.5zM1 10.5A1.5 1.5 0 0 1 2.5 9h3A1.5 1.5 0 0 1 7 10.5v3A1.5 1.5 0 0 1 5.5 15h-3A1.5 1.5 0 0 1 1 13.5zm8 0A1.5 1.5 0 0 1 10.5 9h3a1.5 1.5 0 0 1 1.5 1.5v3a1.5 1.5 0 0 1-1.5 1.5h-3A1.5 1.5 0 0 1 9 13.5z"/>
+                </svg>
+              </button>
+            </div>
+            {currentUser?.role !== 'member' && (
+              <button style={styles.primaryButton} onClick={openAddModal}>
+                + Create Sprint
+              </button>
+            )}
+          </div>
         </div>
 
-        <div style={styles.filterRow}>
-          {['all', 'planned', 'active', 'completed'].map((f) => (
-            <button
-              key={f}
-              style={{
-                ...styles.filterButton,
-                ...(filter === f ? styles.filterButtonActive : {}),
-              }}
-              onClick={() => setFilter(f)}
+        <div style={styles.filterAndSearchRow}>
+          <div style={styles.filterRow}>
+            {['all', 'planned', 'active', 'completed'].map((f) => (
+              <button
+                key={f}
+                style={{
+                  ...styles.filterButton,
+                  ...(filter === f ? styles.filterButtonActive : {}),
+                }}
+                onClick={() => setFilter(f)}
+              >
+                {f.charAt(0).toUpperCase() + f.slice(1)}
+              </button>
+            ))}
+          </div>
+
+          {/* Search Bar */}
+          <div style={styles.searchContainer}>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="16"
+              height="16"
+              fill="currentColor"
+              viewBox="0 0 16 16"
+              style={styles.searchIcon}
             >
-              {f.charAt(0).toUpperCase() + f.slice(1)}
-            </button>
-          ))}
+              <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z"/>
+            </svg>
+            <input
+              type="text"
+              style={styles.searchInput}
+              placeholder="Search sprints"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+            {searchQuery && (
+              <button
+                style={styles.clearSearchButton}
+                onClick={() => setSearchQuery('')}
+                title="Clear search"
+              >
+                ✕
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Pagination */}
@@ -412,15 +567,12 @@ export default function SprintsPage() {
           </div>
         )}
 
-        <div style={styles.sprintsList}>
+        <div style={viewMode === 'grid' ? styles.sprintsGridView : styles.sprintsList}>
           {filteredSprints.length === 0 ? (
             <div style={styles.empty}>No sprints found</div>
           ) : (
-            paginatedSprints.map((sprint) => {
-              const isExpanded = expandedSprints[sprint._id] === true; // Default to collapsed
-
-              return (
-              <div key={sprint._id} style={styles.sprintCard}>
+            paginatedSprints.map((sprint) => (
+              <div key={sprint._id} style={viewMode === 'grid' ? styles.sprintCardGrid : styles.sprintCard}>
                 <div style={styles.sprintHeader}>
                   <div style={styles.sprintHeaderLeft}>
                     <h3 style={styles.sprintName}>{sprint.name}</h3>
@@ -433,24 +585,28 @@ export default function SprintsPage() {
                       {sprint.status}
                     </span>
                   </div>
-                  <div style={styles.sprintActions}>
-                    <button
-                      style={styles.toggleButton}
-                      onClick={() => toggleSprintExpansion(sprint._id)}
-                      title={isExpanded ? 'Collapse' : 'Expand'}
-                    >
-                      {isExpanded ? '▼' : '▶'}
-                    </button>
-                    <button style={styles.actionButton} onClick={() => handleEdit(sprint)}>
-                      Edit
-                    </button>
-                    <button style={styles.deleteButton} onClick={() => handleDelete(sprint._id)}>
-                      Delete
-                    </button>
-                  </div>
+                  {viewMode === 'list' && (
+                    <div style={styles.sprintActions}>
+                      <button
+                        style={styles.viewBacklogsButton}
+                        onClick={() => openBacklogsModal(sprint)}
+                      >
+                        View
+                      </button>
+                      {currentUser?.role !== 'member' && (
+                        <button style={styles.deleteButton} onClick={() => openDeleteModal(sprint)}>
+                          Delete
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
 
-                <div style={styles.sprintInfo}>
+                {viewMode === 'grid' && sprint.goal && (
+                  <p style={styles.sprintGoal}>{sprint.goal}</p>
+                )}
+
+                <div style={viewMode === 'grid' ? styles.sprintInfoGrid : styles.sprintInfo}>
                   <div style={styles.infoItem}>
                     <strong>Start Date:</strong> {formatDate(sprint.startDate)}
                   </div>
@@ -460,89 +616,339 @@ export default function SprintsPage() {
                   <div style={styles.infoItem}>
                     <strong>Backlog Items:</strong> {sprint.backlogItems?.length || 0}
                   </div>
-                  {sprint.goal && (
-                    <div style={styles.infoItem}>
-                      <strong>Goal:</strong> {sprint.goal}
-                    </div>
-                  )}
-                  {sprint.managers && sprint.managers.length > 0 && (
-                    <div style={styles.infoItem}>
-                      <strong>Managers:</strong> {sprint.managers.map(m => m.name).join(', ')}
-                    </div>
-                  )}
                 </div>
 
-                {isExpanded && sprint.backlogItems && sprint.backlogItems.length > 0 && (
-                  <div style={styles.backlogItemsSection}>
-                    <h4 style={styles.backlogItemsTitle}>Backlog Items:</h4>
-                    <div style={styles.backlogItemsList}>
-                      {sprint.backlogItems.map((backlog, index) => (
-                        <div
-                          key={backlog._id}
-                          style={{
-                            ...styles.backlogItem,
-                            borderBottom: index === sprint.backlogItems.length - 1 ? 'none' : '1px solid #e2e8f0',
-                          }}
-                          onMouseEnter={(e) => e.currentTarget.style.background = '#f7fafc'}
-                          onMouseLeave={(e) => e.currentTarget.style.background = 'white'}
-                        >
-                          <div style={styles.backlogItemHeader}>
-                            <span style={styles.backlogItemTitle}>{backlog.title}</span>
-                            <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                              <span
-                                style={{
-                                  ...styles.priorityDot,
-                                  backgroundColor:
-                                    backlog.priority === 'high'
-                                      ? '#f56565'
-                                      : backlog.priority === 'medium'
-                                      ? '#ed8936'
-                                      : '#48bb78',
-                                }}
-                                title={`Priority: ${backlog.priority}`}
-                              ></span>
-                              <span
-                                style={{
-                                  ...styles.taskStatusBadge,
-                                  backgroundColor:
-                                    backlog.taskStatus === 'completed'
-                                      ? '#48bb78'
-                                      : backlog.taskStatus === 'in-progress'
-                                      ? '#CDE5F380'
-                                      : '#718096',
-                                  color:
-                                    backlog.taskStatus === 'in-progress'
-                                      ? '#879BFF'
-                                      : 'white',
-                                }}
-                              >
-                                {backlog.taskStatus.replace('-', ' ')}
-                              </span>
-                            </div>
-                          </div>
-                          {backlog.description && (
-                            <p style={styles.backlogItemDesc}>{backlog.description}</p>
-                          )}
-                          <div style={styles.backlogItemMeta}>
-                            {backlog.assignee && (
-                              <span style={styles.backlogMetaText}>
-                                👤 {backlog.assignee.name}
-                              </span>
-                            )}
-                            <span style={styles.backlogMetaText}>
-                              📦 {backlog.project}
-                            </span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+                {viewMode === 'grid' && (
+                  <div style={styles.sprintActionsGrid}>
+                    <button
+                      style={styles.viewBacklogsButtonGrid}
+                      onClick={() => openBacklogsModal(sprint)}
+                    >
+                      View
+                    </button>
+                    {currentUser?.role !== 'member' && (
+                      <button
+                        style={styles.deleteButtonGrid}
+                        onClick={() => openDeleteModal(sprint)}
+                      >
+                        Delete
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
-              );
-            })
+            ))
           )}
         </div>
+
+        {/* Backlogs Modal with Sprint Edit */}
+        {showBacklogsModal && editingSprint && (
+          <div style={styles.modalOverlay} onClick={() => setShowBacklogsModal(false)}>
+            <div style={styles.backlogsModal} onClick={(e) => e.stopPropagation()}>
+              <div style={styles.backlogsModalHeader}>
+                <div>
+                  <h2 style={styles.backlogsModalTitle}>Sprint Details</h2>
+                  <p style={styles.backlogsModalSubtitle}>
+                    {currentUser?.role === 'member' ? 'View sprint information' : 'View and edit sprint information'}
+                  </p>
+                </div>
+                <button
+                  style={styles.closeModalButton}
+                  onClick={() => {
+                    setShowBacklogsModal(false);
+                    resetForm();
+                  }}
+                  title="Close"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div style={styles.backlogsModalContent}>
+                <form onSubmit={handleCreateSprint}>
+                  {/* Sprint Details Section */}
+                  <div style={styles.sprintEditSection}>
+                    <h3 style={styles.sectionTitle}>Sprint Information</h3>
+
+                    <div style={styles.formGroup}>
+                      <label style={styles.label}>Sprint Name *</label>
+                      <input
+                        type="text"
+                        style={styles.input}
+                        value={formData.name}
+                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                        required
+                        disabled={currentUser?.role === 'member'}
+                      />
+                    </div>
+
+                    <div style={styles.formGroup}>
+                      <label style={styles.label}>Sprint Goal</label>
+                      <textarea
+                        style={styles.textarea}
+                        value={formData.goal}
+                        onChange={(e) => setFormData({ ...formData, goal: e.target.value })}
+                        rows={2}
+                        disabled={currentUser?.role === 'member'}
+                      />
+                    </div>
+
+                    <div style={styles.formRow}>
+                      <div style={styles.formGroup}>
+                        <label style={styles.label}>Start Date *</label>
+                        <input
+                          type="date"
+                          style={styles.input}
+                          value={formData.startDate}
+                          onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
+                          required
+                          disabled={currentUser?.role === 'member'}
+                        />
+                      </div>
+
+                      <div style={styles.formGroup}>
+                        <label style={styles.label}>End Date *</label>
+                        <input
+                          type="date"
+                          style={styles.input}
+                          value={formData.endDate}
+                          onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
+                          required
+                          disabled={currentUser?.role === 'member'}
+                        />
+                      </div>
+                    </div>
+
+                    <div style={styles.formGroup}>
+                      <label style={styles.label}>Status</label>
+                      <select
+                        style={styles.input}
+                        value={formData.status}
+                        onChange={(e) => setFormData({ ...formData, status: e.target.value as any })}
+                        disabled={currentUser?.role === 'member'}
+                      >
+                        <option value="planned">Planned</option>
+                        <option value="active">Active</option>
+                        <option value="completed">Completed</option>
+                      </select>
+                    </div>
+
+                    <div style={styles.formGroup}>
+                      <label style={styles.label}>
+                        Assign Managers ({formData.managerIds.length} selected)
+                      </label>
+
+                      {/* Manager List with Checkboxes */}
+                      <div style={styles.managerSelectionContainer}>
+                        {users.length === 0 ? (
+                          <div style={styles.noBacklogsText}>No managers available</div>
+                        ) : (
+                          users.map((user) => (
+                            <label
+                              key={user._id}
+                              style={styles.checkboxLabel}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.borderColor = '#667eea';
+                                e.currentTarget.style.boxShadow = '0 2px 8px rgba(102, 126, 234, 0.15)';
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.borderColor = '#e2e8f0';
+                                e.currentTarget.style.boxShadow = 'none';
+                              }}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={formData.managerIds.includes(user._id)}
+                                onChange={() => toggleManagerSelection(user._id)}
+                                style={styles.checkbox}
+                                disabled={currentUser?.role === 'member'}
+                              />
+                              <div style={styles.backlogOptionContent}>
+                                <div style={styles.backlogOptionTitle}>{user.name}</div>
+                                <div style={styles.backlogOptionMeta}>
+                                  <span style={styles.backlogOptionProject}>
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" style={{ marginRight: '4px', verticalAlign: 'middle' }}>
+                                      <path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6m2-3a2 2 0 1 1-4 0 2 2 0 0 1 4 0m4 8c0 1-1 1-1 1H3s-1 0-1-1 1-4 6-4 6 3 6 4m-1-.004c-.001-.246-.154-.986-.832-1.664C11.516 10.68 10.289 10 8 10s-3.516.68-4.168 1.332c-.678.678-.83 1.418-.832 1.664z"/>
+                                    </svg>
+                                    {user.role}
+                                  </span>
+                                </div>
+                              </div>
+                            </label>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Backlogs Section - Editable */}
+                  <div style={styles.backlogsSection}>
+                    <div style={styles.formGroup}>
+                      <label style={styles.label}>
+                        Manage Backlogs ({formData.backlogIds.length} selected)
+                      </label>
+
+                      {/* Search Filter */}
+                      <input
+                        type="text"
+                        style={styles.modalSearchInput}
+                        placeholder="Search backlogs by title or project..."
+                        value={backlogSearch}
+                        onChange={(e) => setBacklogSearch(e.target.value)}
+                        disabled={currentUser?.role === 'member'}
+                      />
+
+                      {/* Backlog List with Checkboxes */}
+                      <div style={styles.backlogSelectionContainer}>
+                        {getFilteredBacklogs().length === 0 ? (
+                          <div style={styles.noBacklogsText}>No backlogs available</div>
+                        ) : (
+                          getFilteredBacklogs().map((backlog) => (
+                            <label
+                              key={backlog._id}
+                              style={styles.checkboxLabel}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.borderColor = '#667eea';
+                                e.currentTarget.style.boxShadow = '0 2px 8px rgba(102, 126, 234, 0.15)';
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.borderColor = '#e2e8f0';
+                                e.currentTarget.style.boxShadow = 'none';
+                              }}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={formData.backlogIds.includes(backlog._id)}
+                                onChange={() => toggleBacklogSelection(backlog._id)}
+                                style={styles.checkbox}
+                                disabled={currentUser?.role === 'member'}
+                              />
+                              <div style={styles.backlogOptionContent}>
+                                <div style={styles.backlogItemHeader}>
+                                  <span style={styles.backlogOptionTitle}>{backlog.title}</span>
+                                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                                    <span
+                                      style={{
+                                        ...styles.priorityDot,
+                                        backgroundColor:
+                                          backlog.priority === 'high'
+                                            ? '#f56565'
+                                            : backlog.priority === 'medium'
+                                            ? '#ed8936'
+                                            : '#48bb78',
+                                      }}
+                                      title={`Priority: ${backlog.priority}`}
+                                    ></span>
+                                    <span
+                                      style={{
+                                        ...styles.taskStatusBadge,
+                                        backgroundColor:
+                                          backlog.taskStatus === 'completed'
+                                            ? '#48bb78'
+                                            : backlog.taskStatus === 'in-progress'
+                                            ? '#CDE5F380'
+                                            : '#718096',
+                                        color:
+                                          backlog.taskStatus === 'completed'
+                                            ? 'white'
+                                            : backlog.taskStatus === 'in-progress'
+                                            ? '#879BFF'
+                                            : 'white',
+                                      }}
+                                    >
+                                      {backlog.taskStatus.replace('-', ' ')}
+                                    </span>
+                                  </div>
+                                </div>
+                                <div style={styles.backlogOptionMeta}>
+                                  {backlog.assignee && (
+                                    <span style={styles.backlogOptionProject}>
+                                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" style={{ marginRight: '4px', verticalAlign: 'middle' }}>
+                                        <path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6m2-3a2 2 0 1 1-4 0 2 2 0 0 1 4 0m4 8c0 1-1 1-1 1H3s-1 0-1-1 1-4 6-4 6 3 6 4m-1-.004c-.001-.246-.154-.986-.832-1.664C11.516 10.68 10.289 10 8 10s-3.516.68-4.168 1.332c-.678.678-.83 1.418-.832 1.664z"/>
+                                      </svg>
+                                      {backlog.assignee.name}
+                                    </span>
+                                  )}
+                                  <span style={styles.backlogOptionProject}>
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" style={{ marginRight: '4px', verticalAlign: 'middle' }}>
+                                      <path d="M8.186 1.113a.5.5 0 0 0-.372 0L1.846 3.5 8 5.961 14.154 3.5zM15 4.239l-6.5 2.6v7.922l6.5-2.6V4.24zM7.5 14.762V6.838L1 4.239v7.923zM7.443.184a1.5 1.5 0 0 1 1.114 0l7.129 2.852A.5.5 0 0 1 16 3.5v8.662a1 1 0 0 1-.629.928l-7.185 2.874a.5.5 0 0 1-.372 0L.63 13.09a1 1 0 0 1-.63-.928V3.5a.5.5 0 0 1 .314-.464z"/>
+                                    </svg>
+                                    {backlog.project}
+                                  </span>
+                                  <span
+                                    style={{
+                                      ...styles.priorityBadge,
+                                      backgroundColor:
+                                        backlog.priority === 'high'
+                                          ? '#f56565'
+                                          : backlog.priority === 'medium'
+                                          ? '#ed8936'
+                                          : '#48bb78',
+                                    }}
+                                  >
+                                    {backlog.priority}
+                                  </span>
+                                </div>
+                              </div>
+                            </label>
+                          ))
+                        )}
+                      </div>
+                    </div>
+
+                    {currentUser?.role !== 'member' && (
+                      <div style={styles.formActions}>
+                        <button type="submit" style={styles.primaryButton}>
+                          Update Sprint
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Success Modal */}
+        {showSuccessModal && (
+          <div style={styles.successModalOverlay}>
+            <div style={styles.successModal}>
+              <div style={styles.successIcon}>✓</div>
+              <p style={styles.successMessage}>{successMessage}</p>
+            </div>
+          </div>
+        )}
+
+        {/* Delete Confirmation Modal */}
+        {showDeleteModal && deletingSprint && (
+          <div style={styles.modalOverlay} onClick={() => setShowDeleteModal(false)}>
+            <div style={styles.deleteModal} onClick={(e) => e.stopPropagation()}>
+              <h2 style={styles.deleteModalTitle}>Delete Sprint?</h2>
+              <p style={styles.deleteModalMessage}>
+                Are you sure you want to delete <strong>{deletingSprint.name}</strong>?
+                All backlog items will be moved back to the backlog.
+              </p>
+              <div style={styles.deleteModalActions}>
+                <button
+                  style={styles.deleteConfirmButton}
+                  onClick={handleDelete}
+                >
+                  Delete Sprint
+                </button>
+                <button
+                  style={styles.secondaryButton}
+                  onClick={() => {
+                    setShowDeleteModal(false);
+                    setDeletingSprint(null);
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Modal */}
         {showModal && (
@@ -645,10 +1051,10 @@ export default function SprintsPage() {
                             <div style={styles.backlogOptionTitle}>{user.name}</div>
                             <div style={styles.backlogOptionMeta}>
                               <span style={styles.backlogOptionProject}>
-                                📧 {user.email}
-                              </span>
-                              <span style={styles.backlogOptionProject}>
-                                💼 {user.position}
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" style={{ marginRight: '4px', verticalAlign: 'middle' }}>
+                                  <path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6m2-3a2 2 0 1 1-4 0 2 2 0 0 1 4 0m4 8c0 1-1 1-1 1H3s-1 0-1-1 1-4 6-4 6 3 6 4m-1-.004c-.001-.246-.154-.986-.832-1.664C11.516 10.68 10.289 10 8 10s-3.516.68-4.168 1.332c-.678.678-.83 1.418-.832 1.664z"/>
+                                </svg>
+                                {user.role}
                               </span>
                             </div>
                           </div>
@@ -666,7 +1072,7 @@ export default function SprintsPage() {
                   {/* Search Filter */}
                   <input
                     type="text"
-                    style={styles.searchInput}
+                    style={styles.modalSearchInput}
                     placeholder="Search backlogs by title or project..."
                     value={backlogSearch}
                     onChange={(e) => setBacklogSearch(e.target.value)}
@@ -699,7 +1105,12 @@ export default function SprintsPage() {
                           <div style={styles.backlogOptionContent}>
                             <div style={styles.backlogOptionTitle}>{backlog.title}</div>
                             <div style={styles.backlogOptionMeta}>
-                              <span style={styles.backlogOptionProject}>📦 {backlog.project}</span>
+                              <span style={styles.backlogOptionProject}>
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" style={{ marginRight: '4px', verticalAlign: 'middle' }}>
+                                  <path d="M8.186 1.113a.5.5 0 0 0-.372 0L1.846 3.5 8 5.961 14.154 3.5zM15 4.239l-6.5 2.6v7.922l6.5-2.6V4.24zM7.5 14.762V6.838L1 4.239v7.923zM7.443.184a1.5 1.5 0 0 1 1.114 0l7.129 2.852A.5.5 0 0 1 16 3.5v8.662a1 1 0 0 1-.629.928l-7.185 2.874a.5.5 0 0 1-.372 0L.63 13.09a1 1 0 0 1-.63-.928V3.5a.5.5 0 0 1 .314-.464z"/>
+                                </svg>
+                                {backlog.project}
+                              </span>
                               <span
                                 style={{
                                   ...styles.priorityBadge,
@@ -740,6 +1151,27 @@ export default function SprintsPage() {
             </div>
           </div>
         )}
+
+        {/* Incomplete Tasks Warning Modal */}
+        {showIncompleteWarningModal && (
+          <div style={styles.modalOverlay} onClick={() => setShowIncompleteWarningModal(false)}>
+            <div style={styles.warningModal} onClick={(e) => e.stopPropagation()}>
+              <div style={styles.warningIcon}>⚠</div>
+              <h2 style={styles.warningModalTitle}>Cannot Complete Sprint</h2>
+              <p style={styles.warningModalMessage}>
+                {incompleteWarningMessage}
+              </p>
+              <div style={styles.confirmModalActions}>
+                <button
+                  style={styles.primaryButton}
+                  onClick={() => setShowIncompleteWarningModal(false)}
+                >
+                  OK
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </AppLayout>
   );
@@ -761,6 +1193,36 @@ const styles: { [key: string]: React.CSSProperties } = {
     color: '#2d3748',
     margin: 0,
   },
+  headerRight: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+  },
+  viewToggle: {
+    display: 'flex',
+    gap: '8px',
+    background: '#f7fafc',
+    padding: '4px',
+    borderRadius: '8px',
+    border: '1px solid #e2e8f0',
+  },
+  viewButton: {
+    padding: '8px 12px',
+    border: 'none',
+    background: 'transparent',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    color: '#718096',
+    transition: 'all 0.2s',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  viewButtonActive: {
+    background: 'white',
+    color: '#FF6495',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+  },
   primaryButton: {
     background: '#FF6495',
     color: 'white',
@@ -772,10 +1234,75 @@ const styles: { [key: string]: React.CSSProperties } = {
     cursor: 'pointer',
     transition: 'transform 0.2s',
   },
+  filterAndSearchRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: '16px',
+    marginBottom: '24px',
+    flexWrap: 'wrap',
+  },
   filterRow: {
     display: 'flex',
     gap: '12px',
-    marginBottom: '24px',
+    flex: 1,
+    minWidth: '0',
+    flexWrap: 'wrap',
+  },
+  searchContainer: {
+    position: 'relative',
+    width: '25%',
+    minWidth: '200px',
+    maxWidth: '300px',
+    flexShrink: 0,
+    boxSizing: 'border-box',
+  },
+  searchIcon: {
+    position: 'absolute',
+    left: '12px',
+    top: '50%',
+    transform: 'translateY(-50%)',
+    color: '#a0aec0',
+    pointerEvents: 'none' as const,
+  },
+  searchInput: {
+    width: '100%',
+    padding: '8px 40px 8px 36px',
+    border: '2px solid #e2e8f0',
+    borderRadius: '6px',
+    fontSize: '14px',
+    outline: 'none',
+    transition: 'border-color 0.2s',
+    fontFamily: 'inherit',
+    boxSizing: 'border-box',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  },
+  modalSearchInput: {
+    width: '100%',
+    padding: '10px 12px',
+    border: '1px solid #e2e8f0',
+    borderRadius: '6px',
+    fontSize: '14px',
+    outline: 'none',
+    marginBottom: '12px',
+    marginTop: '8px',
+    boxSizing: 'border-box',
+  },
+  clearSearchButton: {
+    position: 'absolute',
+    right: '12px',
+    top: '50%',
+    transform: 'translateY(-50%)',
+    background: 'transparent',
+    border: 'none',
+    color: '#a0aec0',
+    fontSize: '18px',
+    cursor: 'pointer',
+    padding: '4px 8px',
+    borderRadius: '4px',
+    transition: 'all 0.2s',
   },
   filterButton: {
     padding: '8px 16px',
@@ -799,11 +1326,28 @@ const styles: { [key: string]: React.CSSProperties } = {
     flexDirection: 'column',
     gap: '20px',
   },
+  sprintsGridView: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))',
+    columnGap: '32px',
+    rowGap: '60px',
+  },
   sprintCard: {
     background: 'white',
     padding: '24px',
     borderRadius: '10px',
     boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+  },
+  sprintCardGrid: {
+    background: 'white',
+    padding: '24px',
+    borderRadius: '10px',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+    transition: 'transform 0.2s, box-shadow 0.2s',
+    display: 'flex',
+    flexDirection: 'column',
+    height: '100%',
+    minHeight: '300px',
   },
   sprintHeader: {
     display: 'flex',
@@ -815,6 +1359,18 @@ const styles: { [key: string]: React.CSSProperties } = {
     display: 'flex',
     alignItems: 'center',
     gap: '12px',
+    flexWrap: 'wrap',
+  },
+  sprintGoal: {
+    fontSize: '14px',
+    color: '#718096',
+    marginBottom: '16px',
+    lineHeight: '1.5',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    display: '-webkit-box',
+    WebkitLineClamp: 2,
+    WebkitBoxOrient: 'vertical',
   },
   sprintName: {
     fontSize: '22px',
@@ -834,16 +1390,35 @@ const styles: { [key: string]: React.CSSProperties } = {
     display: 'flex',
     gap: '8px',
   },
-  toggleButton: {
-    padding: '6px 10px',
-    border: '1px solid #d3d3d3',
+  sprintActionsGrid: {
+    display: 'flex',
+    gap: '8px',
+    marginTop: 'auto',
+    width: '100%',
+  },
+  viewBacklogsButton: {
+    padding: '6px 14px',
+    border: '1px solid #4299e1',
     background: 'white',
-    color: '#4a5568',
+    color: '#4299e1',
     borderRadius: '6px',
     cursor: 'pointer',
-    fontSize: '14px',
-    fontWeight: '600',
-    outline: 'none',
+    fontSize: '13px',
+    fontWeight: '500',
+    transition: 'all 0.2s',
+  },
+  viewBacklogsButtonGrid: {
+    padding: '8px 14px',
+    border: '1px solid #4299e1',
+    background: 'white',
+    color: '#4299e1',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontSize: '13px',
+    fontWeight: '500',
+    transition: 'all 0.2s',
+    flex: '1',
+    textAlign: 'center',
   },
   actionButton: {
     padding: '6px 14px',
@@ -865,12 +1440,34 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontSize: '13px',
     fontWeight: '500',
   },
+  deleteButtonGrid: {
+    padding: '8px 14px',
+    border: '1px solid #f56565',
+    background: 'white',
+    color: '#f56565',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontSize: '13px',
+    fontWeight: '500',
+    flex: '1',
+    textAlign: 'center',
+  },
   sprintInfo: {
     display: 'flex',
     flexWrap: 'wrap',
     gap: '20px',
     fontSize: '14px',
     color: '#4a5568',
+  },
+  sprintInfoGrid: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+    fontSize: '14px',
+    color: '#4a5568',
+    marginBottom: '16px',
+    paddingBottom: '16px',
+    borderBottom: '1px solid #e2e8f0',
   },
   infoItem: {
     display: 'flex',
@@ -962,6 +1559,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     color: '#718096',
   },
   empty: {
+    gridColumn: '1 / -1',
     textAlign: 'center',
     padding: '60px',
     fontSize: '16px',
@@ -994,6 +1592,103 @@ const styles: { [key: string]: React.CSSProperties } = {
     marginBottom: '24px',
     color: '#2d3748',
   },
+  backlogsModal: {
+    background: 'white',
+    borderRadius: '12px',
+    padding: '0',
+    width: '90%',
+    maxWidth: '800px',
+    maxHeight: '85vh',
+    display: 'flex',
+    flexDirection: 'column',
+  },
+  backlogsModalHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    padding: '24px 32px',
+    borderBottom: '2px solid #e2e8f0',
+    background: '#f7fafc',
+    borderRadius: '12px 12px 0 0',
+  },
+  backlogsModalTitle: {
+    fontSize: '24px',
+    fontWeight: '600',
+    color: '#2d3748',
+    margin: 0,
+    marginBottom: '4px',
+  },
+  backlogsModalSubtitle: {
+    fontSize: '14px',
+    color: '#718096',
+    margin: 0,
+  },
+  closeModalButton: {
+    background: 'transparent',
+    border: 'none',
+    fontSize: '24px',
+    color: '#718096',
+    cursor: 'pointer',
+    padding: '4px 8px',
+    borderRadius: '4px',
+    transition: 'all 0.2s',
+    lineHeight: '1',
+  },
+  backlogsModalContent: {
+    padding: '24px 32px',
+    overflowY: 'auto',
+    flex: 1,
+  },
+  sprintEditSection: {
+    marginBottom: '32px',
+    paddingBottom: '32px',
+    borderBottom: '2px solid #e2e8f0',
+  },
+  backlogsSection: {
+    marginTop: '32px',
+  },
+  sectionTitle: {
+    fontSize: '18px',
+    fontWeight: '600',
+    color: '#2d3748',
+    marginBottom: '20px',
+    marginTop: 0,
+  },
+  deleteModal: {
+    background: 'white',
+    borderRadius: '12px',
+    padding: '32px',
+    width: '90%',
+    maxWidth: '450px',
+  },
+  deleteModalTitle: {
+    fontSize: '22px',
+    fontWeight: '600',
+    marginBottom: '16px',
+    color: '#2d3748',
+  },
+  deleteModalMessage: {
+    fontSize: '15px',
+    color: '#4a5568',
+    lineHeight: '1.6',
+    marginBottom: '24px',
+  },
+  deleteModalActions: {
+    display: 'flex',
+    gap: '12px',
+    justifyContent: 'flex-end',
+  },
+  deleteConfirmButton: {
+    padding: '12px 24px',
+    border: 'none',
+    background: '#f56565',
+    color: 'white',
+    borderRadius: '8px',
+    fontSize: '14px',
+    fontWeight: '600',
+    cursor: 'pointer',
+    transition: 'background 0.2s',
+  },
   form: {
     display: 'flex',
     flexDirection: 'column',
@@ -1003,11 +1698,13 @@ const styles: { [key: string]: React.CSSProperties } = {
     display: 'flex',
     flexDirection: 'column',
     gap: '8px',
+    marginBottom: '20px',
   },
   formRow: {
     display: 'grid',
     gridTemplateColumns: '1fr 1fr',
     gap: '16px',
+    marginBottom: '20px',
   },
   label: {
     fontSize: '14px',
@@ -1035,7 +1732,9 @@ const styles: { [key: string]: React.CSSProperties } = {
     display: 'flex',
     gap: '12px',
     justifyContent: 'flex-end',
-    marginTop: '8px',
+    marginTop: '32px',
+    paddingTop: '24px',
+    borderTop: '1px solid #e2e8f0',
   },
   secondaryButton: {
     padding: '12px 24px',
@@ -1047,38 +1746,32 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontWeight: '600',
     cursor: 'pointer',
   },
-  searchInput: {
-    padding: '10px 12px',
-    border: '1px solid #e2e8f0',
-    borderRadius: '6px',
-    fontSize: '14px',
-    outline: 'none',
-    marginBottom: '12px',
-  },
   backlogSelectionContainer: {
-    maxHeight: '300px',
+    maxHeight: '400px',
     overflowY: 'auto',
     border: '1px solid #e2e8f0',
     borderRadius: '8px',
-    padding: '8px',
+    padding: '12px',
     background: '#f7fafc',
+    marginTop: '8px',
   },
   managerSelectionContainer: {
-    maxHeight: '200px',
+    maxHeight: '250px',
     overflowY: 'auto',
     border: '1px solid #e2e8f0',
     borderRadius: '8px',
-    padding: '8px',
+    padding: '12px',
     background: '#f7fafc',
+    marginTop: '8px',
   },
   checkboxLabel: {
     display: 'flex',
     alignItems: 'flex-start',
     gap: '12px',
-    padding: '12px',
+    padding: '16px',
     background: 'white',
-    borderRadius: '6px',
-    marginBottom: '8px',
+    borderRadius: '8px',
+    marginBottom: '10px',
     cursor: 'pointer',
     transition: 'all 0.2s',
     border: '1px solid #e2e8f0',
@@ -1160,5 +1853,77 @@ const styles: { [key: string]: React.CSSProperties } = {
     color: '#4a5568',
     fontWeight: '500',
     padding: '0 4px',
+  },
+  successModalOverlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    display: 'flex',
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+    zIndex: 2000,
+    paddingTop: '100px',
+    pointerEvents: 'none',
+  },
+  successModal: {
+    background: 'linear-gradient(135deg, #48bb78 0%, #38a169 100%)',
+    color: 'white',
+    padding: '24px 32px',
+    borderRadius: '12px',
+    boxShadow: '0 10px 40px rgba(72, 187, 120, 0.4)',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '16px',
+    animation: 'slideDown 0.3s ease-out',
+    pointerEvents: 'auto',
+  },
+  successIcon: {
+    fontSize: '32px',
+    fontWeight: 'bold',
+    background: 'white',
+    color: '#48bb78',
+    width: '48px',
+    height: '48px',
+    borderRadius: '50%',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  successMessage: {
+    fontSize: '16px',
+    fontWeight: '600',
+    margin: 0,
+  },
+  warningModal: {
+    background: 'white',
+    borderRadius: '12px',
+    padding: '32px',
+    width: '90%',
+    maxWidth: '500px',
+    textAlign: 'center',
+  },
+  warningIcon: {
+    fontSize: '48px',
+    color: '#ed8936',
+    marginBottom: '16px',
+  },
+  warningModalTitle: {
+    fontSize: '22px',
+    fontWeight: '600',
+    marginBottom: '16px',
+    color: '#2d3748',
+  },
+  warningModalMessage: {
+    fontSize: '15px',
+    color: '#4a5568',
+    lineHeight: '1.6',
+    marginBottom: '24px',
+  },
+  confirmModalActions: {
+    display: 'flex',
+    gap: '12px',
+    justifyContent: 'center',
   },
 };

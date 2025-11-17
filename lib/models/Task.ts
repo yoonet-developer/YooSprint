@@ -39,6 +39,11 @@ const taskSchema = new mongoose.Schema({
     ref: 'User',
     required: true
   },
+  department: {
+    type: String,
+    trim: true,
+    default: ''
+  },
   createdAt: {
     type: Date,
     default: Date.now
@@ -51,7 +56,7 @@ const taskSchema = new mongoose.Schema({
 
 // Update the updatedAt timestamp before saving
 taskSchema.pre('save', function(next) {
-  this.updatedAt = Date.now();
+  this.updatedAt = new Date();
   next();
 });
 

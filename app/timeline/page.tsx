@@ -1,7 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useState, useEffect, useRef } from 'react';
 import AppLayout from '@/components/shared/AppLayout';
 
 interface Backlog {
@@ -38,6 +37,7 @@ interface Sprint {
   startDate: string;
   endDate: string;
   status: 'planned' | 'active' | 'completed';
+  managers?: Array<{ _id: string; name: string; email: string }>;
 }
 
 interface SprintGroup {
@@ -46,32 +46,33 @@ interface SprintGroup {
 }
 
 export default function TimelinePage() {
-  const searchParams = useSearchParams();
-  const view = searchParams.get('view') || 'project';
-
   const [backlogs, setBacklogs] = useState<Backlog[]>([]);
   const [sprints, setSprints] = useState<Sprint[]>([]);
   const [loading, setLoading] = useState(true);
-  const [viewMode, setViewMode] = useState<'project' | 'sprint'>(view as 'project' | 'sprint');
-  const [sprintFilter, setSprintFilter] = useState('all');
   const [projectFilter, setProjectFilter] = useState('all');
   const [expandedProjects, setExpandedProjects] = useState<{ [key: string]: boolean }>({});
   const [expandedSprints, setExpandedSprints] = useState<{ [key: string]: boolean }>({});
+  const [currentUserId, setCurrentUserId] = useState<string>('');
+  const [userRole, setUserRole] = useState<string>('');
+  const [showGanttChart, setShowGanttChart] = useState(false);
+  const [highlightedSprintId, setHighlightedSprintId] = useState<string | null>(null);
+  const sprintRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
 
   useEffect(() => {
     fetchData();
   }, []);
 
-  useEffect(() => {
-    // Update viewMode when URL parameter changes
-    if (view === 'sprint' || view === 'project') {
-      setViewMode(view);
-    }
-  }, [view]);
-
   const fetchData = async () => {
     try {
       const token = localStorage.getItem('token');
+
+      // Get current user ID and role
+      const userData = localStorage.getItem('user');
+      if (userData) {
+        const user = JSON.parse(userData);
+        setCurrentUserId(user.id);
+        setUserRole(user.role);
+      }
 
       // Fetch backlogs
       const backlogsRes = await fetch('/api/backlogs', {
@@ -89,7 +90,20 @@ export default function TimelinePage() {
         setBacklogs(backlogsData.backlogs);
       }
       if (sprintsData.success) {
-        setSprints(sprintsData.sprints);
+        // Fetch detailed sprint info with managers populated
+        const sprintsWithDetails = await Promise.all(
+          sprintsData.sprints.map(async (sprint: Sprint) => {
+            const detailsRes = await fetch(`/api/sprints/${sprint._id}`, {
+              headers: { 'Authorization': `Bearer ${token}` },
+            });
+            const detailsData = await detailsRes.json();
+            if (detailsData.success) {
+              return detailsData.sprint;
+            }
+            return sprint;
+          })
+        );
+        setSprints(sprintsWithDetails);
       }
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -208,9 +222,62 @@ export default function TimelinePage() {
     }));
   };
 
+  const scrollToSprint = (sprintId: string) => {
+    const sprintElement = sprintRefs.current[sprintId];
+    if (sprintElement) {
+      // Expand the sprint if it's not already expanded
+      setExpandedSprints((prev) => ({
+        ...prev,
+        [sprintId]: true,
+      }));
+
+      // Scroll to the sprint with smooth behavior
+      setTimeout(() => {
+        sprintElement.scrollIntoView({
+          behavior: 'smooth',
+          block: 'start',
+        });
+
+        // Highlight the sprint
+        setHighlightedSprintId(sprintId);
+
+        // Remove highlight after 2 seconds
+        setTimeout(() => {
+          setHighlightedSprintId(null);
+        }, 2000);
+      }, 100);
+    }
+  };
+
   const renderProjectTimeline = () => {
-    // Show all backlogs, not just ongoing ones
-    let filteredBacklogs = backlogs;
+    // Filter sprints: admins see all, managers see only their sprints
+    const managedSprints = userRole === 'admin'
+      ? sprints
+      : sprints.filter((sprint) => {
+          if (!sprint.managers || sprint.managers.length === 0) return false;
+          return sprint.managers.some((manager) => manager._id === currentUserId);
+        });
+
+    // Get sprint IDs that the user can manage
+    const managedSprintIds = managedSprints.map(s => s._id);
+
+    // Filter backlogs - include both backlogs in sprints AND backlogs not in any sprint
+    let filteredBacklogs = backlogs.filter((b) => {
+      // Admins see all backlogs (with or without sprint)
+      if (userRole === 'admin') {
+        return true;
+      }
+
+      // Managers see:
+      // 1. Backlogs in their managed sprints
+      // 2. Backlogs not in any sprint (available backlogs)
+      if (!b.sprint) {
+        return true; // Include backlogs not in sprint
+      }
+
+      const sprintId = typeof b.sprint === 'string' ? b.sprint : b.sprint?._id;
+      return sprintId ? managedSprintIds.includes(sprintId) : false;
+    });
 
     // Apply project filter if a specific project is selected
     if (projectFilter !== 'all') {
@@ -288,353 +355,311 @@ export default function TimelinePage() {
         <div key={projectName} style={styles.sprintSection}>
           <div
             style={{
-              ...styles.sprintHeader,
-              background: 'white',
-              borderLeft: `6px solid ${statusColor}`,
-              color: 'rgb(45, 55, 72)',
-              cursor: 'pointer',
+              ...styles.sprintHeaderMinimal,
+              borderLeft: `4px solid ${statusColor}`,
             }}
             onClick={() => toggleProjectExpansion(projectName)}
           >
-            <div style={styles.sprintTitle}>
-              <div style={styles.sprintNameRow}>
-                <h3 style={{ ...styles.sprintName, color: 'rgb(45, 55, 72)' }}>{projectName}</h3>
-                <span style={{
-                  ...styles.sprintStatusBadge,
-                  background: statusColor,
-                  color: 'white'
-                }}>
-                  {projectStatus}
-                </span>
-              </div>
-              <div style={styles.projectMeta}>
-                <div style={styles.metaItem}>
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="16"
-                    height="16"
-                    fill="currentColor"
-                    viewBox="0 0 16 16"
-                    style={{ marginRight: '6px' }}
-                  >
-                    <path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6m2-3a2 2 0 1 1-4 0 2 2 0 0 1 4 0m4 8c0 1-1 1-1 1H3s-1 0-1-1 1-4 6-4 6 3 6 4m-1-.004c-.001-.246-.154-.986-.832-1.664C11.516 10.68 10.289 10 8 10c-2.29 0-3.516.68-4.168 1.332-.678.678-.83 1.418-.832 1.664z"/>
-                  </svg>
-                  <span style={styles.assigneeList}>
-                    {assignees.size > 0
-                      ? Array.from(assignees).join(', ')
-                      : 'No assignees'}
+            <div style={styles.sprintMainInfo}>
+              <div style={styles.sprintTopRow}>
+                <h3 style={styles.sprintNameMinimal}>{projectName}</h3>
+                <div style={styles.sprintMetaRow}>
+                  <span style={{
+                    ...styles.sprintStatusBadgeMinimal,
+                    background: `${statusColor}15`,
+                    color: statusColor
+                  }}>
+                    {projectStatus}
                   </span>
-                </div>
-                <div style={styles.metaItem}>
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="16"
-                    height="16"
-                    fill="currentColor"
-                    viewBox="0 0 16 16"
-                    style={{ marginRight: '6px' }}
-                  >
-                    <path d="M2 1a1 1 0 0 0-1 1v4.586a1 1 0 0 0 .293.707l7 7a1 1 0 0 0 1.414 0l4.586-4.586a1 1 0 0 0 0-1.414l-7-7A1 1 0 0 0 6.586 1zm4 3.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0"/>
-                  </svg>
-                  <span>
-                    Sprint{sprintSet.size !== 1 ? 's' : ''}: {sprintSet.size > 0
-                      ? Array.from(sprintSet).join(', ')
-                      : 'No sprint assigned'}
+                  <span style={styles.sprintDateMinimal}>
+                    {assignees.size} assignee{assignees.size !== 1 ? 's' : ''} • {sprintSet.size} sprint{sprintSet.size !== 1 ? 's' : ''}
                   </span>
                 </div>
               </div>
-              <div style={styles.progressBarContainer}>
-                <div style={styles.progressBarBackground}>
-                  <div
-                    style={{
-                      ...styles.progressBarFill,
-                      width: `${progressPercentage}%`,
-                      background: statusColor,
-                    }}
-                  ></div>
+              <div style={styles.sprintStatsRow}>
+                <div style={styles.statItem}>
+                  <span style={styles.statValue}>{totalTasks}</span>
+                  <span style={styles.statLabel}>Tasks</span>
                 </div>
-                <span style={{ ...styles.progressText, color: 'rgb(45, 55, 72)' }}>
-                  {completedTasks} / {totalTasks} tasks completed ({progressPercentage}%)
-                </span>
+                <div style={styles.statDivider}></div>
+                <div style={styles.statItem}>
+                  <span style={styles.statValue}>{completedTasks}</span>
+                  <span style={styles.statLabel}>Completed</span>
+                </div>
+                <div style={styles.statDivider}></div>
+                <div style={styles.statItem}>
+                  <span style={{ ...styles.statValue, color: statusColor }}>{progressPercentage}%</span>
+                  <span style={styles.statLabel}>Progress</span>
+                </div>
+                <div style={{ flex: 1 }}></div>
+                <span style={{ ...styles.chevronMinimal, color: statusColor }}>{isExpanded ? '−' : '+'}</span>
               </div>
-            </div>
-            <div style={styles.sprintHeaderRight}>
-              <span style={{ ...styles.sprintCount, color: 'rgb(45, 55, 72)', background: 'rgba(226, 232, 240, 0.5)' }}>
-                {totalTasks} task{totalTasks !== 1 ? 's' : ''}
-              </span>
-              <span style={{ ...styles.chevron, color: 'rgb(45, 55, 72)' }}>{isExpanded ? '▼' : '▶'}</span>
+              <div style={styles.progressBarMinimal}>
+                <div
+                  style={{
+                    ...styles.progressBarFillMinimal,
+                    width: `${progressPercentage}%`,
+                    background: statusColor,
+                  }}
+                ></div>
+              </div>
             </div>
           </div>
           {isExpanded && (
-            <div style={styles.timelineItems}>
-              {projectBacklogs.map((backlog) => {
-                const assigneeName = backlog.assignee?.name || 'Unassigned';
-                const assigneePosition = backlog.assignee?.position || 'Team Member';
-                const createdDate = new Date(backlog.createdAt);
-                const timeAgo = getTimeAgo(createdDate);
-                const fullDate = formatDateTime(backlog.createdAt);
+            <div style={styles.timelineItemsMinimal}>
+              {(() => {
+                // Group backlogs by sprint
+                const sprintGroups: { [key: string]: { sprint: any, backlogs: Backlog[] } } = {};
+                const noSprintBacklogs: Backlog[] = [];
 
-                const displayStatus = backlog.taskStatus || backlog.status || 'pending';
-                let statusLabel = displayStatus.replace('-', ' ');
-                if (displayStatus === 'pending') {
-                  statusLabel = 'to do';
-                } else if (displayStatus === 'done') {
-                  statusLabel = 'completed';
-                }
+                projectBacklogs.forEach((backlog) => {
+                  if (backlog.sprint) {
+                    const sprintId = typeof backlog.sprint === 'string' ? backlog.sprint : backlog.sprint._id;
+                    if (!sprintGroups[sprintId]) {
+                      sprintGroups[sprintId] = {
+                        sprint: backlog.sprint,
+                        backlogs: []
+                      };
+                    }
+                    sprintGroups[sprintId].backlogs.push(backlog);
+                  } else {
+                    noSprintBacklogs.push(backlog);
+                  }
+                });
 
-                const sprintName = backlog.sprint?.name || 'No Sprint';
-                const sprintStatus = backlog.sprint?.status || '';
+                // Get sprint groups sorted by sprint name
+                const sortedSprints = Object.values(sprintGroups).sort((a, b) => {
+                  const nameA = a.sprint?.name || '';
+                  const nameB = b.sprint?.name || '';
+                  return nameA.localeCompare(nameB);
+                });
 
                 return (
-                  <div key={backlog._id} style={styles.timelineItem}>
-                    <div style={styles.dateColumn}>
-                      <div style={styles.dateBox}>
-                        <div style={styles.dateMonth}>
-                          {createdDate.toLocaleString('en-US', { month: 'short' }).toUpperCase()}
-                        </div>
-                        <div style={styles.dateDay}>{createdDate.getDate()}</div>
-                        <div style={styles.dateYear}>{createdDate.getFullYear()}</div>
-                      </div>
-                      <div style={styles.timeAgo}>{timeAgo}</div>
-                    </div>
-                    <div style={styles.timelineMarker}></div>
-                    <div style={styles.timelineContent}>
-                      <div style={styles.contentHeader}>
-                        <h4 style={styles.contentTitle}>{backlog.title}</h4>
-                        <span style={styles.fullDateTime}>{fullDate}</span>
-                      </div>
-                      <p style={styles.description}>{backlog.description || 'No description'}</p>
+                  <>
+                    {/* Render each sprint group */}
+                    {sortedSprints.map((sprintGroup) => {
+                      const sprint = sprintGroup.sprint;
+                      const sprintBacklogs = sprintGroup.backlogs;
+                      const sprintId = sprint._id || sprint;
 
-                      <div style={styles.timelineMeta}>
-                        <span style={{ ...styles.badge, ...styles[`priority_${backlog.priority}`] }}>
-                          {backlog.priority}
-                        </span>
-                        <span style={{ ...styles.badge, ...styles[`status_${displayStatus}`] }}>
-                          {statusLabel}
-                        </span>
-                        <span style={styles.info}>
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            width="14"
-                            height="14"
-                            fill="currentColor"
-                            viewBox="0 0 16 16"
-                            style={{ marginRight: '4px', verticalAlign: 'middle' }}
-                          >
-                            <path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6m2-3a2 2 0 1 1-4 0 2 2 0 0 1 4 0m4 8c0 1-1 1-1 1H3s-1 0-1-1 1-4 6-4 6 3 6 4m-1-.004c-.001-.246-.154-.986-.832-1.664C11.516 10.68 10.289 10 8 10c-2.29 0-3.516.68-4.168 1.332-.678.678-.83 1.418-.832 1.664z"/>
-                          </svg>
-                          {assigneeName} ({assigneePosition})
-                        </span>
-                        <span style={styles.info}>
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            width="14"
-                            height="14"
-                            fill="currentColor"
-                            viewBox="0 0 16 16"
-                            style={{ marginRight: '4px', verticalAlign: 'middle' }}
-                          >
-                            <path d="M2 1a1 1 0 0 0-1 1v4.586a1 1 0 0 0 .293.707l7 7a1 1 0 0 0 1.414 0l4.586-4.586a1 1 0 0 0 0-1.414l-7-7A1 1 0 0 0 6.586 1zm4 3.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0"/>
-                          </svg>
-                          {sprintName} {sprintStatus && `(${sprintStatus})`}
-                        </span>
+                      // Calculate sprint completion
+                      const completedInSprint = sprintBacklogs.filter(b =>
+                        b.taskStatus === 'completed' || b.status === 'done'
+                      ).length;
+                      const completionRate = sprintBacklogs.length > 0
+                        ? Math.round((completedInSprint / sprintBacklogs.length) * 100)
+                        : 0;
+
+                      // Sprint status color
+                      let sprintStatusColor = '#6B7094';
+                      if (sprint.status === 'active') sprintStatusColor = '#FF6495';
+                      else if (sprint.status === 'completed') sprintStatusColor = '#48bb78';
+
+                      return (
+                        <div
+                          key={sprintId}
+                          style={{
+                            ...styles.sprintGroupContainer,
+                            ...(highlightedSprintId === sprintId ? styles.highlightedSprint : {})
+                          }}
+                          ref={(el) => { sprintRefs.current[sprintId] = el; }}
+                        >
+                          {/* Sprint Header */}
+                          <div style={{
+                            ...styles.sprintGroupHeader,
+                            borderLeft: `3px solid ${sprintStatusColor}`
+                          }}>
+                            <div style={styles.sprintGroupInfo}>
+                              <span style={styles.sprintGroupName}>{sprint.name || 'Unnamed Sprint'}</span>
+                              <span style={styles.sprintGroupMeta}>
+                                {sprintBacklogs.length} task{sprintBacklogs.length !== 1 ? 's' : ''} • {completionRate}% complete
+                              </span>
+                            </div>
+                            <span style={{
+                              ...styles.sprintGroupBadge,
+                              background: `${sprintStatusColor}15`,
+                              color: sprintStatusColor
+                            }}>
+                              {sprint.status || 'planned'}
+                            </span>
+                          </div>
+
+                          {/* Backlogs in this sprint */}
+                          {sprintBacklogs.map((backlog) => {
+                            const assigneeName = backlog.assignee?.name || 'Unassigned';
+                            const assigneePosition = backlog.assignee?.position || '';
+                            const createdDate = new Date(backlog.createdAt);
+
+                            const displayStatus = backlog.taskStatus || 'pending';
+                            let statusLabel = displayStatus.replace('-', ' ');
+                            if (displayStatus === 'pending') {
+                              statusLabel = 'to do';
+                            } else if (displayStatus === 'completed') {
+                              statusLabel = 'completed';
+                            }
+
+                            // Status color
+                            let statusColor = '#e2e8f0';
+                            let statusTextColor = '#4a5568';
+                            if (displayStatus === 'in-progress') {
+                              statusColor = '#879BFF';
+                              statusTextColor = 'white';
+                            } else if (displayStatus === 'completed') {
+                              statusColor = '#48bb78';
+                              statusTextColor = 'white';
+                            }
+
+                            // Priority color
+                            let priorityColor = '#22543d';
+                            if (backlog.priority === 'high') priorityColor = '#c53030';
+                            else if (backlog.priority === 'medium') priorityColor = '#c05621';
+
+                            return (
+                              <div key={backlog._id} style={styles.backlogItemMinimalNested}>
+                                <div style={styles.backlogItemHeader}>
+                                  <div style={styles.backlogTitleRow}>
+                                    <div style={styles.backlogTitleSection}>
+                                      <span style={{
+                                        ...styles.priorityIndicator,
+                                        background: priorityColor
+                                      }}></span>
+                                      <h4 style={styles.backlogTitleMinimal}>{backlog.title}</h4>
+                                    </div>
+                                    <span style={{
+                                      ...styles.statusBadgeMinimal,
+                                      background: statusColor,
+                                      color: statusTextColor
+                                    }}>
+                                      {statusLabel}
+                                    </span>
+                                  </div>
+                                  {backlog.description && (
+                                    <p style={styles.descriptionMinimal}>{backlog.description}</p>
+                                  )}
+                                </div>
+                                <div style={styles.backlogItemFooter}>
+                                  <div style={styles.backlogMetaItems}>
+                                    <div style={styles.backlogMetaItem}>
+                                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16" style={{ opacity: 0.6 }}>
+                                        <path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6m2-3a2 2 0 1 1-4 0 2 2 0 0 1 4 0m4 8c0 1-1 1-1 1H3s-1 0-1-1 1-4 6-4 6 3 6 4m-1-.004c-.001-.246-.154-.986-.832-1.664C11.516 10.68 10.289 10 8 10c-2.29 0-3.516.68-4.168 1.332-.678.678-.83 1.418-.832 1.664z"/>
+                                      </svg>
+                                      <span>{assigneeName}</span>
+                                      {assigneePosition && <span style={styles.metaDivider}>·</span>}
+                                      {assigneePosition && <span style={styles.metaSecondary}>{assigneePosition}</span>}
+                                    </div>
+                                  </div>
+                                  <div style={styles.backlogDateInfo}>
+                                    <span style={styles.backlogDate}>
+                                      {createdDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })}
+
+                    {/* Backlogs without sprint */}
+                    {noSprintBacklogs.length > 0 && (
+                      <div style={styles.sprintGroupContainer}>
+                        <div style={{
+                          ...styles.sprintGroupHeader,
+                          borderLeft: '3px solid #cbd5e0'
+                        }}>
+                          <div style={styles.sprintGroupInfo}>
+                            <span style={styles.sprintGroupName}>No Sprint</span>
+                            <span style={styles.sprintGroupMeta}>
+                              {noSprintBacklogs.length} task{noSprintBacklogs.length !== 1 ? 's' : ''}
+                            </span>
+                          </div>
+                          <span style={{
+                            ...styles.sprintGroupBadge,
+                            background: '#f1f5f9',
+                            color: '#718096'
+                          }}>
+                            backlog
+                          </span>
+                        </div>
+
+                        {noSprintBacklogs.map((backlog) => {
+                          const assigneeName = backlog.assignee?.name || 'Unassigned';
+                          const assigneePosition = backlog.assignee?.position || '';
+                          const createdDate = new Date(backlog.createdAt);
+
+                          const displayStatus: string = backlog.taskStatus || backlog.status || 'pending';
+                          let statusLabel = displayStatus.replace('-', ' ');
+                          if (displayStatus === 'pending') {
+                            statusLabel = 'to do';
+                          } else if (displayStatus === 'done') {
+                            statusLabel = 'completed';
+                          }
+
+                          let statusColor = '#e2e8f0';
+                          let statusTextColor = '#4a5568';
+                          if (displayStatus === 'in-progress') {
+                            statusColor = '#879BFF';
+                            statusTextColor = 'white';
+                          } else if (displayStatus === 'completed' || displayStatus === 'done') {
+                            statusColor = '#48bb78';
+                            statusTextColor = 'white';
+                          }
+
+                          let priorityColor = '#22543d';
+                          if (backlog.priority === 'high') priorityColor = '#c53030';
+                          else if (backlog.priority === 'medium') priorityColor = '#c05621';
+
+                          return (
+                            <div key={backlog._id} style={styles.backlogItemMinimalNested}>
+                              <div style={styles.backlogItemHeader}>
+                                <div style={styles.backlogTitleRow}>
+                                  <div style={styles.backlogTitleSection}>
+                                    <span style={{
+                                      ...styles.priorityIndicator,
+                                      background: priorityColor
+                                    }}></span>
+                                    <h4 style={styles.backlogTitleMinimal}>{backlog.title}</h4>
+                                  </div>
+                                  <span style={{
+                                    ...styles.statusBadgeMinimal,
+                                    background: statusColor,
+                                    color: statusTextColor
+                                  }}>
+                                    {statusLabel}
+                                  </span>
+                                </div>
+                                {backlog.description && (
+                                  <p style={styles.descriptionMinimal}>{backlog.description}</p>
+                                )}
+                              </div>
+                              <div style={styles.backlogItemFooter}>
+                                <div style={styles.backlogMetaItems}>
+                                  <div style={styles.backlogMetaItem}>
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16" style={{ opacity: 0.6 }}>
+                                      <path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6m2-3a2 2 0 1 1-4 0 2 2 0 0 1 4 0m4 8c0 1-1 1-1 1H3s-1 0-1-1 1-4 6-4 6 3 6 4m-1-.004c-.001-.246-.154-.986-.832-1.664C11.516 10.68 10.289 10 8 10c-2.29 0-3.516.68-4.168 1.332-.678.678-.83 1.418-.832 1.664z"/>
+                                    </svg>
+                                    <span>{assigneeName}</span>
+                                    {assigneePosition && <span style={styles.metaDivider}>·</span>}
+                                    {assigneePosition && <span style={styles.metaSecondary}>{assigneePosition}</span>}
+                                  </div>
+                                </div>
+                                <div style={styles.backlogDateInfo}>
+                                  <span style={styles.backlogDate}>
+                                    {createdDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
-                    </div>
-                  </div>
+                    )}
+                  </>
                 );
-              })}
+              })()}
             </div>
           )}
-        </div>
-      );
-    });
-  };
-
-  const renderSprintTimeline = () => {
-    // Get all backlogs that are in a sprint
-    let filteredBacklogs = backlogs.filter((b) => b.sprint);
-
-    if (sprintFilter !== 'all') {
-      filteredBacklogs = filteredBacklogs.filter((b) => {
-        const sprintId = b.sprint?._id || b.sprint;
-        return String(sprintId) === String(sprintFilter);
-      });
-    }
-
-    // Sort by creation date (oldest first)
-    const sortedBacklogs = [...filteredBacklogs].sort(
-      (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-    );
-
-    if (sortedBacklogs.length === 0) {
-      return (
-        <div style={styles.empty}>
-          No sprint items found. Add backlog items to a sprint to see them here.
-        </div>
-      );
-    }
-
-    // Group backlogs by sprint
-    const backlogsBySprint: { [key: string]: SprintGroup } = {};
-    sortedBacklogs.forEach((backlog) => {
-      const sprintId = backlog.sprint?._id || backlog.sprint;
-      if (sprintId && !backlogsBySprint[sprintId]) {
-        // Find the full sprint details from the sprints array
-        const fullSprintDetails = sprints.find(s => s._id === sprintId);
-        backlogsBySprint[sprintId] = {
-          sprint: fullSprintDetails || backlog.sprint,
-          items: [],
-        };
-      }
-      if (sprintId) {
-        backlogsBySprint[sprintId].items.push(backlog);
-      }
-    });
-
-    // Sort sprints by start date
-    const sortedSprintIds = Object.keys(backlogsBySprint).sort((a, b) => {
-      const sprintA = backlogsBySprint[a].sprint;
-      const sprintB = backlogsBySprint[b].sprint;
-      const dateA = sprintA.startDate ? new Date(sprintA.startDate) : new Date(0);
-      const dateB = sprintB.startDate ? new Date(sprintB.startDate) : new Date(0);
-      return dateA.getTime() - dateB.getTime();
-    });
-
-    return sortedSprintIds.map((sprintId) => {
-      const sprintGroup = backlogsBySprint[sprintId];
-      const sprint = sprintGroup.sprint;
-      const sprintBacklogs = sprintGroup.items;
-
-      const sprintName = sprint.name || 'Unnamed Sprint';
-      const sprintStatus = sprint.status || 'unknown';
-      const startDate = sprint.startDate ? formatDate(sprint.startDate) : 'No start date';
-      const endDate = sprint.endDate ? formatDate(sprint.endDate) : 'No end date';
-      const dateRangeText = `${startDate} - ${endDate}`;
-
-      // Calculate progress
-      const totalTasks = sprintBacklogs.length;
-      const completedTasks = sprintBacklogs.filter(
-        (b) => b.taskStatus === 'completed' || b.status === 'done'
-      ).length;
-      const progressPercentage = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
-
-      // Status color for sprint header
-      let statusColor = '#6B7094'; // planned
-      if (sprintStatus === 'active') statusColor = '#FF6495';
-      else if (sprintStatus === 'completed') statusColor = '#48bb78';
-
-      const isExpanded = expandedSprints[sprintId] === true; // Default to collapsed
-
-      return (
-        <div key={sprintId} style={styles.sprintSection}>
-          <div
-            style={{
-              ...styles.sprintHeader,
-              background: 'white',
-              borderLeft: `6px solid ${statusColor}`,
-              color: 'rgb(45, 55, 72)',
-              cursor: 'pointer',
-            }}
-            onClick={() => toggleSprintExpansion(sprintId)}
-          >
-            <div style={styles.sprintTitle}>
-              <div style={styles.sprintNameRow}>
-                <h3 style={{ ...styles.sprintName, color: 'rgb(45, 55, 72)' }}>{sprintName}</h3>
-                <span style={{
-                  ...styles.sprintStatusBadge,
-                  background: statusColor,
-                  color: 'white'
-                }}>
-                  {sprintStatus}
-                </span>
-              </div>
-              <span style={{ ...styles.sprintDateRange, color: 'rgb(45, 55, 72)' }}>
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="16"
-                  height="16"
-                  fill="currentColor"
-                  viewBox="0 0 16 16"
-                  style={{ marginRight: '8px' }}
-                >
-                  <path d="M3.5 0a.5.5 0 0 1 .5.5V1h8V.5a.5.5 0 0 1 1 0V1h1a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2h1V.5a.5.5 0 0 1 .5-.5M1 4v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V4z" />
-                </svg>
-                {dateRangeText}
-              </span>
-              <div style={styles.progressBarContainer}>
-                <div style={styles.progressBarBackground}>
-                  <div
-                    style={{
-                      ...styles.progressBarFill,
-                      width: `${progressPercentage}%`,
-                      background: statusColor,
-                    }}
-                  ></div>
-                </div>
-                <span style={{ ...styles.progressText, color: 'rgb(45, 55, 72)' }}>
-                  {completedTasks} / {totalTasks} completed ({progressPercentage}%)
-                </span>
-              </div>
-            </div>
-            <div style={styles.sprintHeaderRight}>
-              <span style={{ ...styles.sprintCount, color: 'rgb(45, 55, 72)', background: 'rgba(226, 232, 240, 0.5)' }}>
-                {sprintBacklogs.length} item{sprintBacklogs.length !== 1 ? 's' : ''}
-              </span>
-              <span style={{ ...styles.chevron, color: 'rgb(45, 55, 72)' }}>{isExpanded ? '▼' : '▶'}</span>
-            </div>
-          </div>
-          {isExpanded && <div style={styles.timelineItems}>
-            {sprintBacklogs.map((backlog) => {
-              const assigneeName = backlog.assignee?.name || 'Unassigned';
-              const createdDate = new Date(backlog.createdAt);
-              const timeAgo = getTimeAgo(createdDate);
-              const fullDate = formatDateTime(backlog.createdAt);
-
-              const displayStatus = backlog.taskStatus || backlog.status || 'pending';
-              let statusLabel = displayStatus.replace('-', ' ');
-              if (displayStatus === 'pending') {
-                statusLabel = 'to do';
-              } else if (displayStatus === 'done') {
-                statusLabel = 'completed';
-              }
-
-              const projectName = backlog.project || 'No Project';
-
-              return (
-                <div key={backlog._id} style={styles.timelineItem}>
-                  <div style={styles.dateColumn}>
-                    <div style={styles.dateBox}>
-                      <div style={styles.dateMonth}>
-                        {createdDate.toLocaleString('en-US', { month: 'short' }).toUpperCase()}
-                      </div>
-                      <div style={styles.dateDay}>{createdDate.getDate()}</div>
-                      <div style={styles.dateYear}>{createdDate.getFullYear()}</div>
-                    </div>
-                    <div style={styles.timeAgo}>{timeAgo}</div>
-                  </div>
-                  <div style={styles.timelineMarker}></div>
-                  <div style={styles.timelineContent}>
-                    <div style={styles.contentHeader}>
-                      <h4 style={styles.contentTitle}>{backlog.title}</h4>
-                      <span style={styles.fullDateTime}>{fullDate}</span>
-                    </div>
-                    <p style={styles.description}>{backlog.description || 'No description'}</p>
-
-                    <div style={styles.timelineMeta}>
-                      <span style={{ ...styles.badge, ...styles[`priority_${backlog.priority}`] }}>
-                        {backlog.priority}
-                      </span>
-                      <span style={{ ...styles.badge, ...styles[`status_${displayStatus}`] }}>
-                        {statusLabel}
-                      </span>
-                      <span style={styles.info}>{assigneeName}</span>
-                      <span style={styles.info}>{projectName}</span>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>}
         </div>
       );
     });
@@ -652,41 +677,285 @@ export default function TimelinePage() {
     <AppLayout>
       <div style={styles.container}>
         <div style={styles.header}>
-          <h2 style={styles.title}>
-            {viewMode === 'project' ? 'Project Timeline' : 'Sprint Timeline'}
-          </h2>
-          {viewMode === 'project' && (
+          <h2 style={styles.title}>Timeline</h2>
+          <div style={styles.headerControls}>
+            <button
+              style={{
+                ...styles.ganttButton,
+                ...(showGanttChart ? styles.ganttButtonActive : {}),
+              }}
+              onClick={() => setShowGanttChart(!showGanttChart)}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" style={{ marginRight: '6px' }}>
+                <path d="M2 0h12v2H2z"/>
+                <path d="M2 4h4v1H2z"/>
+                <path d="M7 4h5v1H7z"/>
+                <path d="M2 6h3v1H2z"/>
+                <path d="M6 6h6v1H6z"/>
+              </svg>
+              {showGanttChart ? 'Hide Gantt Chart' : 'View Gantt Chart'}
+            </button>
             <select
               style={styles.filterSelect}
               value={projectFilter}
               onChange={(e) => setProjectFilter(e.target.value)}
             >
               <option value="all">All Projects</option>
-              {Array.from(new Set(backlogs.map((b) => b.project))).sort().map((project) => (
-                <option key={project} value={project}>
-                  {project}
-                </option>
-              ))}
+              {Array.from(
+                new Set(
+                  backlogs
+                    .filter((b) => {
+                      // Admins see all projects
+                      if (userRole === 'admin') {
+                        return true;
+                      }
+                      // Managers see projects with backlogs in their sprints OR not in any sprint
+                      if (!b.sprint) return true;
+                      const sprintId = b.sprint?._id || b.sprint;
+                      const managedSprints = sprints.filter((sprint) => {
+                        if (!sprint.managers || sprint.managers.length === 0) return false;
+                        return sprint.managers.some((manager) => manager._id === currentUserId);
+                      });
+                      return managedSprints.some((sprint) => sprint._id === sprintId);
+                    })
+                    .map((b) => b.project)
+                )
+              )
+                .sort()
+                .map((project) => (
+                  <option key={project} value={project}>
+                    {project}
+                  </option>
+                ))}
             </select>
-          )}
-          {viewMode === 'sprint' && (
-            <select
-              style={styles.filterSelect}
-              value={sprintFilter}
-              onChange={(e) => setSprintFilter(e.target.value)}
-            >
-              <option value="all">All Sprints</option>
-              {sprints.map((sprint) => (
-                <option key={sprint._id} value={sprint._id}>
-                  {sprint.name}
-                </option>
-              ))}
-            </select>
-          )}
+          </div>
         </div>
 
+        {showGanttChart && (
+          <div style={styles.ganttContainer}>
+            {(() => {
+              // Get all projects with their backlogs
+              const managedSprints = userRole === 'admin'
+                ? sprints
+                : sprints.filter((sprint) => {
+                    if (!sprint.managers || sprint.managers.length === 0) return false;
+                    return sprint.managers.some((manager) => manager._id === currentUserId);
+                  });
+
+              const managedSprintIds = managedSprints.map(s => s._id);
+
+              let filteredBacklogs = backlogs.filter((b) => {
+                if (userRole === 'admin') return true;
+                if (!b.sprint) return true;
+                const sprintId = b.sprint._id;
+                return managedSprintIds.includes(sprintId);
+              });
+
+              if (projectFilter !== 'all') {
+                filteredBacklogs = filteredBacklogs.filter((b) => b.project === projectFilter);
+              }
+
+              // Group by project and get sprints for each project
+              const projectGroups: { [key: string]: { backlogs: Backlog[], sprints: Sprint[] } } = {};
+              filteredBacklogs.forEach((backlog) => {
+                const projectName = backlog.project || 'Unnamed Project';
+                if (!projectGroups[projectName]) {
+                  projectGroups[projectName] = { backlogs: [], sprints: [] };
+                }
+                projectGroups[projectName].backlogs.push(backlog);
+
+                // Add unique sprints for this project
+                if (backlog.sprint) {
+                  const sprintId = backlog.sprint._id || backlog.sprint;
+                  const fullSprint = sprints.find(s => s._id === sprintId);
+                  if (fullSprint && !projectGroups[projectName].sprints.find(s => s._id === fullSprint._id)) {
+                    projectGroups[projectName].sprints.push(fullSprint);
+                  }
+                }
+              });
+
+              const projectNames = Object.keys(projectGroups).sort();
+
+              if (projectNames.length === 0) {
+                return <div style={styles.empty}>No projects to display in Gantt chart</div>;
+              }
+
+              // Get all sprint dates for timeline range
+              const allSprints = projectNames.flatMap(name => projectGroups[name].sprints);
+              if (allSprints.length === 0) {
+                return <div style={styles.empty}>No sprints found for selected projects</div>;
+              }
+
+              const allDates = allSprints.flatMap(s => [new Date(s.startDate), new Date(s.endDate)]);
+              const minDate = new Date(Math.min(...allDates.map(d => d.getTime())));
+              const maxDate = new Date(Math.max(...allDates.map(d => d.getTime())));
+
+              return (
+                <>
+                  <div style={styles.ganttHeader}>
+                    <div style={styles.ganttSprintColumn}>Project Name</div>
+                    <div style={styles.ganttTimelineColumn}>
+                      <div style={styles.ganttTimelineHeader}>
+                        {(() => {
+                          const months: { month: string; days: number }[] = [];
+                          let currentDate = new Date(minDate);
+                          while (currentDate <= maxDate) {
+                            const monthYear = currentDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+                            const daysInMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).getDate();
+                            const startDay = currentDate.getDate();
+                            const endDay = currentDate.getMonth() === maxDate.getMonth() && currentDate.getFullYear() === maxDate.getFullYear()
+                              ? maxDate.getDate()
+                              : daysInMonth;
+                            const days = endDay - startDay + 1;
+
+                            months.push({ month: monthYear, days });
+                            currentDate = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1);
+                          }
+
+                          return months.map((m, i) => (
+                            <div key={i} style={{ ...styles.ganttMonth, flex: m.days }}>
+                              {m.month}
+                            </div>
+                          ));
+                        })()}
+                      </div>
+                      <div style={styles.ganttDatesRow}>
+                        {(() => {
+                          const totalDays = Math.ceil((maxDate.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+                          const dates = [];
+                          for (let i = 0; i < totalDays; i++) {
+                            const date = new Date(minDate);
+                            date.setDate(date.getDate() + i);
+                            dates.push(date);
+                          }
+
+                          const showEvery = totalDays <= 30 ? 1 : 5;
+
+                          return dates.map((date, i) => {
+                            const cellWidth = `${100 / totalDays}%`;
+                            if (i % showEvery !== 0 && i !== 0 && i !== totalDays - 1) {
+                              return <div key={i} style={{ ...styles.ganttDateCell, width: cellWidth, minWidth: '30px' }}></div>;
+                            }
+                            return (
+                              <div key={i} style={{ ...styles.ganttDateCell, width: cellWidth, minWidth: '30px', fontWeight: '600' }}>
+                                {date.getDate()}
+                              </div>
+                            );
+                          });
+                        })()}
+                      </div>
+                    </div>
+                  </div>
+                  {projectNames.map((projectName) => {
+                    const projectData = projectGroups[projectName];
+                    const projectSprints = projectData.sprints.sort((a, b) =>
+                      new Date(a.startDate).getTime() - new Date(b.startDate).getTime()
+                    );
+
+                    if (projectSprints.length === 0) return null;
+
+                    const totalDays = Math.ceil((maxDate.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+
+                    return (
+                      <div key={projectName} style={{ marginBottom: '24px' }}>
+                        {/* Project Header */}
+                        <div style={{
+                          ...styles.ganttRow,
+                          background: '#f7fafc',
+                          borderLeft: '4px solid #879BFF',
+                          fontWeight: '600',
+                        }}>
+                          <div style={styles.ganttSprintColumn}>
+                            <div style={{ ...styles.ganttSprintName, fontSize: '16px', color: '#2d3748' }}>
+                              {projectName}
+                            </div>
+                            <div style={{ ...styles.ganttSprintDates, color: '#718096' }}>
+                              {projectSprints.length} sprint{projectSprints.length !== 1 ? 's' : ''}
+                            </div>
+                          </div>
+                          <div style={styles.ganttTimelineColumn}>
+                          </div>
+                        </div>
+
+                        {/* Sprint Rows */}
+                        {projectSprints.map((sprint) => {
+                          const sprintStart = new Date(sprint.startDate);
+                          const sprintEnd = new Date(sprint.endDate);
+                          const startOffset = Math.ceil((sprintStart.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24));
+                          const sprintDuration = Math.ceil((sprintEnd.getTime() - sprintStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+
+                          const leftPercent = (startOffset / totalDays) * 100;
+                          const widthPercent = (sprintDuration / totalDays) * 100;
+
+                          // Get backlogs for this sprint
+                          const sprintBacklogs = projectData.backlogs.filter((b) => {
+                            const backlogSprintId = b.sprint?._id || b.sprint;
+                            return String(backlogSprintId) === String(sprint._id);
+                          });
+
+                          // Calculate completion
+                          const totalTasks = sprintBacklogs.length;
+                          const completedTasks = sprintBacklogs.filter(
+                            (b) => b.taskStatus === 'completed' || b.status === 'done'
+                          ).length;
+                          const completionRate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+
+                          // Get status color
+                          let statusColor = '#6B7094'; // planned
+                          if (sprint.status === 'active') statusColor = '#FF6495';
+                          else if (sprint.status === 'completed') statusColor = '#48bb78';
+
+                          return (
+                            <div key={sprint._id} style={{
+                              ...styles.ganttRow,
+                              paddingLeft: '24px',
+                              background: 'white',
+                            }}>
+                              <div style={styles.ganttSprintColumn}>
+                                <div style={{ ...styles.ganttSprintName, fontSize: '14px' }}>
+                                  {sprint.name}
+                                </div>
+                                <div style={styles.ganttSprintDates}>
+                                  {formatDate(sprint.startDate)} - {formatDate(sprint.endDate)}
+                                </div>
+                              </div>
+                              <div style={styles.ganttTimelineColumn}>
+                                <div style={styles.ganttBarContainer}>
+                                  <div
+                                    style={{
+                                      ...styles.ganttBar,
+                                      left: `${leftPercent}%`,
+                                      width: `${widthPercent}%`,
+                                      backgroundColor: statusColor,
+                                    }}
+                                    onClick={() => {
+                                      // Expand the project first
+                                      setExpandedProjects((prev) => ({
+                                        ...prev,
+                                        [projectName]: true,
+                                      }));
+                                      // Then scroll to the sprint
+                                      scrollToSprint(sprint._id);
+                                    }}
+                                  >
+                                    <span style={styles.ganttBarLabel}>{completionRate}% complete</span>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })}
+                </>
+              );
+            })()}
+          </div>
+        )}
+
         <div style={styles.timelineContainer}>
-          {viewMode === 'project' ? renderProjectTimeline() : renderSprintTimeline()}
+          {renderProjectTimeline()}
         </div>
       </div>
     </AppLayout>
@@ -1005,9 +1274,6 @@ const styles: { [key: string]: React.CSSProperties } = {
   status_planned: {
     background: 'rgba(255, 255, 255, 0.25)',
   },
-  status_completed: {
-    background: 'rgba(255, 255, 255, 0.25)',
-  },
   info: {
     padding: '6px 12px',
     background: 'white',
@@ -1060,5 +1326,343 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontSize: '18px',
     fontWeight: 'bold',
     transition: 'transform 0.2s',
+  },
+  ganttButton: {
+    display: 'flex',
+    alignItems: 'center',
+    padding: '10px 20px',
+    background: 'white',
+    border: '2px solid #879BFF',
+    borderRadius: '8px',
+    fontSize: '14px',
+    fontWeight: '600',
+    color: '#879BFF',
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+  },
+  ganttButtonActive: {
+    background: '#879BFF',
+    color: 'white',
+  },
+  ganttContainer: {
+    background: 'white',
+    borderRadius: '12px',
+    padding: '24px',
+    boxShadow: '0 2px 12px rgba(0,0,0,0.08)',
+    overflowX: 'auto',
+    overflowY: 'visible',
+    marginBottom: '32px',
+  },
+  ganttHeader: {
+    display: 'flex',
+    borderBottom: '2px solid #e2e8f0',
+    paddingBottom: '12px',
+    marginBottom: '8px',
+    fontWeight: '600',
+    fontSize: '14px',
+    color: '#4a5568',
+  },
+  ganttSprintColumn: {
+    width: '250px',
+    flexShrink: 0,
+    paddingRight: '16px',
+  },
+  ganttTimelineColumn: {
+    flex: 1,
+    minWidth: 0,
+  },
+  ganttTimelineHeader: {
+    display: 'flex',
+    gap: '1px',
+    background: '#f7fafc',
+    borderRadius: '6px',
+    overflow: 'hidden',
+  },
+  ganttMonth: {
+    padding: '8px',
+    textAlign: 'center',
+    background: 'white',
+    borderRight: '1px solid #e2e8f0',
+    fontSize: '13px',
+    fontWeight: '500',
+  },
+  ganttDatesRow: {
+    display: 'flex',
+    background: '#f7fafc',
+    borderTop: '1px solid #e2e8f0',
+  },
+  ganttDateCell: {
+    padding: '6px 2px',
+    textAlign: 'center',
+    fontSize: '11px',
+    color: '#718096',
+    borderRight: '1px solid #e2e8f0',
+    flexShrink: 0,
+    boxSizing: 'border-box',
+  },
+  ganttRow: {
+    display: 'flex',
+    padding: '16px 0',
+    borderBottom: '1px solid #f1f5f9',
+    alignItems: 'center',
+  },
+  ganttSprintName: {
+    fontWeight: '600',
+    color: '#2d3748',
+    marginBottom: '4px',
+    fontSize: '14px',
+  },
+  ganttSprintDates: {
+    fontSize: '12px',
+    color: '#718096',
+  },
+  ganttBarContainer: {
+    position: 'relative',
+    height: '36px',
+    background: '#f7fafc',
+    borderRadius: '6px',
+    overflow: 'visible',
+  },
+  ganttBar: {
+    position: 'absolute',
+    height: '100%',
+    borderRadius: '6px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
+    transition: 'all 0.3s',
+    cursor: 'pointer',
+  },
+  ganttBarLabel: {
+    color: 'white',
+    fontSize: '12px',
+    fontWeight: '600',
+    textShadow: '0 1px 2px rgba(0, 0, 0, 0.2)',
+  },
+  sprintHeaderMinimal: {
+    padding: '20px 24px',
+    background: 'white',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+  },
+  sprintMainInfo: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '16px',
+  },
+  sprintTopRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: '16px',
+  },
+  sprintNameMinimal: {
+    fontSize: '18px',
+    fontWeight: '600',
+    color: '#2d3748',
+    margin: 0,
+  },
+  sprintMetaRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+  },
+  sprintStatusBadgeMinimal: {
+    padding: '4px 10px',
+    borderRadius: '6px',
+    fontSize: '11px',
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px',
+  },
+  sprintDateMinimal: {
+    fontSize: '13px',
+    color: '#718096',
+    fontWeight: '500',
+  },
+  sprintStatsRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '20px',
+  },
+  statItem: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '2px',
+  },
+  statValue: {
+    fontSize: '20px',
+    fontWeight: '700',
+    color: '#2d3748',
+    lineHeight: '1',
+  },
+  statLabel: {
+    fontSize: '11px',
+    color: '#a0aec0',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px',
+    fontWeight: '600',
+  },
+  statDivider: {
+    width: '1px',
+    height: '32px',
+    background: '#e2e8f0',
+  },
+  chevronMinimal: {
+    fontSize: '24px',
+    fontWeight: '300',
+    transition: 'transform 0.2s',
+  },
+  progressBarMinimal: {
+    height: '4px',
+    background: '#f1f5f9',
+    borderRadius: '2px',
+    overflow: 'hidden',
+  },
+  progressBarFillMinimal: {
+    height: '100%',
+    borderRadius: '2px',
+    transition: 'width 0.3s ease',
+  },
+  timelineItemsMinimal: {
+    padding: '0',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '0',
+    borderTop: '1px solid #f1f5f9',
+    maxHeight: '400px',
+    overflowY: 'auto',
+  },
+  backlogItemMinimal: {
+    padding: '16px 24px',
+    borderBottom: '1px solid #f1f5f9',
+    background: 'white',
+    transition: 'background 0.2s ease',
+  },
+  backlogItemHeader: {
+    marginBottom: '12px',
+  },
+  backlogTitleRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: '16px',
+    marginBottom: '8px',
+  },
+  backlogTitleSection: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    flex: 1,
+  },
+  priorityIndicator: {
+    width: '3px',
+    height: '20px',
+    borderRadius: '2px',
+    flexShrink: 0,
+  },
+  backlogTitleMinimal: {
+    fontSize: '15px',
+    fontWeight: '600',
+    color: '#2d3748',
+    margin: 0,
+  },
+  statusBadgeMinimal: {
+    padding: '4px 10px',
+    borderRadius: '6px',
+    fontSize: '11px',
+    fontWeight: '600',
+    textTransform: 'capitalize',
+    flexShrink: 0,
+  },
+  descriptionMinimal: {
+    fontSize: '13px',
+    color: '#718096',
+    lineHeight: '1.5',
+    margin: 0,
+    paddingLeft: '13px',
+  },
+  backlogItemFooter: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: '16px',
+    paddingLeft: '13px',
+  },
+  backlogMetaItems: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '16px',
+    flexWrap: 'wrap',
+  },
+  backlogMetaItem: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    fontSize: '12px',
+    color: '#4a5568',
+    fontWeight: '500',
+  },
+  metaDivider: {
+    color: '#cbd5e0',
+    margin: '0 2px',
+  },
+  metaSecondary: {
+    color: '#a0aec0',
+    fontSize: '11px',
+  },
+  backlogDateInfo: {
+    display: 'flex',
+    alignItems: 'center',
+  },
+  backlogDate: {
+    fontSize: '11px',
+    color: '#a0aec0',
+    fontWeight: '500',
+  },
+  sprintGroupContainer: {
+    marginBottom: '16px',
+  },
+  sprintGroupHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '12px 16px',
+    background: '#f7fafc',
+    borderBottom: '1px solid #e2e8f0',
+    borderRadius: '6px 6px 0 0',
+  },
+  sprintGroupInfo: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '4px',
+  },
+  sprintGroupName: {
+    fontSize: '14px',
+    fontWeight: '600',
+    color: '#2d3748',
+  },
+  sprintGroupMeta: {
+    fontSize: '12px',
+    color: '#718096',
+  },
+  sprintGroupBadge: {
+    padding: '4px 10px',
+    borderRadius: '6px',
+    fontSize: '11px',
+    fontWeight: '600',
+    textTransform: 'capitalize',
+  },
+  backlogItemMinimalNested: {
+    padding: '16px 24px 16px 32px',
+    borderBottom: '1px solid #f1f5f9',
+    background: 'white',
+    transition: 'background 0.2s ease',
+  },
+  highlightedSprint: {
+    boxShadow: '0 0 0 3px #879BFF40, 0 4px 16px rgba(135, 155, 255, 0.3)',
+    transform: 'scale(1.01)',
+    transition: 'all 0.3s ease',
   },
 };

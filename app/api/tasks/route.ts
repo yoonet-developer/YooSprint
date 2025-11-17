@@ -1,12 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAuth, errorResponse, successResponse } from '@/lib/utils/apiHelpers';
+import { requireAuth, errorResponse, successResponse, getDepartmentFilter } from '@/lib/utils/apiHelpers';
 import Task from '@/lib/models/Task';
 
 // GET all tasks
 export async function GET(request: NextRequest) {
   try {
-    await requireAuth(request);
-    const tasks = await Task.find().populate('assignee', 'name email').sort({ createdAt: -1 });
+    const user = await requireAuth(request);
+
+    // Filter by department unless user is super-admin
+    const filter = getDepartmentFilter(user);
+
+    const tasks = await Task.find(filter).populate('assignee', 'name email department').sort({ createdAt: -1 });
     return successResponse({ tasks });
   } catch (error: any) {
     if (error.message === 'Unauthorized') {
@@ -23,12 +27,16 @@ export async function POST(request: NextRequest) {
     const user = await requireAuth(request);
     const body = await request.json();
 
+    // Automatically set department from user if not provided
+    const department = body.department || user.department || '';
+
     const task = await Task.create({
       ...body,
+      department,
       createdBy: user._id,
     });
 
-    const populatedTask = await Task.findById(task._id).populate('assignee', 'name email');
+    const populatedTask = await Task.findById(task._id).populate('assignee', 'name email department');
     return successResponse({ task: populatedTask }, 201);
   } catch (error: any) {
     if (error.message === 'Unauthorized') {

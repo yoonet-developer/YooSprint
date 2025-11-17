@@ -19,6 +19,43 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className={poppins.className}>
+      <head>
+        <style>{`
+          /* Custom Scrollbar Styles */
+          ::-webkit-scrollbar {
+            width: 12px;
+            height: 12px;
+          }
+
+          ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 10px;
+          }
+
+          ::-webkit-scrollbar-thumb {
+            background: #879BFF;
+            border-radius: 10px;
+          }
+
+          ::-webkit-scrollbar-thumb:hover {
+            background: #6b7fe6;
+          }
+
+          /* Firefox Scrollbar */
+          * {
+            scrollbar-width: thin;
+            scrollbar-color: #879BFF #f1f1f1;
+          }
+
+          /* Ensure all inputs, textareas, selects, and buttons use Poppins font */
+          input,
+          textarea,
+          select,
+          button {
+            font-family: inherit;
+          }
+        `}</style>
+      </head>
       <body style={{ margin: 0 }}>{children}</body>
     </html>
   );

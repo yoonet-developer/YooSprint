@@ -8,8 +8,9 @@ interface User {
   username: string;
   name: string;
   email: string;
-  role: 'admin' | 'manager' | 'member';
+  role: 'super-admin' | 'admin' | 'manager' | 'member';
   position: string;
+  department: string;
   isActive: boolean;
   createdAt: string;
 }
@@ -21,24 +22,39 @@ export default function TeamPage() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [currentUserRole, setCurrentUserRole] = useState<string>('');
+  const [currentUserDepartment, setCurrentUserDepartment] = useState<string>('');
+  const [departments, setDepartments] = useState<string[]>([]);
+  const [showAddDepartmentInput, setShowAddDepartmentInput] = useState(false);
+  const [showEditDepartmentInput, setShowEditDepartmentInput] = useState(false);
+  const [newDepartment, setNewDepartment] = useState('');
   const [addFormData, setAddFormData] = useState({
     username: '',
     name: '',
     position: '',
+    department: '',
     password: '',
+    role: 'member' as 'super-admin' | 'admin' | 'manager' | 'member',
   });
   const [editFormData, setEditFormData] = useState({
     username: '',
     name: '',
     position: '',
-    role: 'member' as 'admin' | 'manager' | 'member',
+    department: '',
+    role: 'member' as 'super-admin' | 'admin' | 'manager' | 'member',
+    newPassword: '',
   });
+  const [showToggleConfirmModal, setShowToggleConfirmModal] = useState(false);
+  const [userToToggle, setUserToToggle] = useState<{ id: string; name: string; currentStatus: boolean } | null>(null);
+  const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
+  const [userToDelete, setUserToDelete] = useState<{ id: string; name: string } | null>(null);
 
   useEffect(() => {
     const userData = localStorage.getItem('user');
     if (userData) {
       const user = JSON.parse(userData);
       setCurrentUserRole(user.role);
+      setCurrentUserDepartment(user.department || '');
+      setAddFormData(prev => ({...prev, department: user.department || ''}));
     }
     fetchUsers();
   }, []);
@@ -54,6 +70,13 @@ export default function TeamPage() {
       const data = await response.json();
       if (data.success) {
         setUsers(data.users);
+        // Extract unique departments from users
+        const uniqueDepartments = Array.from(new Set(
+          data.users
+            .map((u: User) => u.department)
+            .filter((d: string) => d && d.trim() !== '')
+        )).sort();
+        setDepartments(uniqueDepartments as string[]);
       }
     } catch (error) {
       console.error('Error fetching users:', error);
@@ -76,8 +99,9 @@ export default function TeamPage() {
           username: addFormData.username,
           name: addFormData.name,
           position: addFormData.position,
+          department: addFormData.department,
           password: addFormData.password,
-          role: 'member',
+          role: addFormData.role,
         }),
       });
 
@@ -101,13 +125,28 @@ export default function TeamPage() {
 
     try {
       const token = localStorage.getItem('token');
+
+      // Prepare update data - only include password if it's been set
+      const updateData: any = {
+        username: editFormData.username,
+        name: editFormData.name,
+        position: editFormData.position,
+        department: editFormData.department,
+        role: editFormData.role,
+      };
+
+      // Only include password if a new one was provided
+      if (editFormData.newPassword && editFormData.newPassword.trim() !== '') {
+        updateData.password = editFormData.newPassword;
+      }
+
       const response = await fetch(`/api/users/${editingUser._id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`,
         },
-        body: JSON.stringify(editFormData),
+        body: JSON.stringify(updateData),
       });
 
       const data = await response.json();
@@ -115,6 +154,9 @@ export default function TeamPage() {
         setShowEditModal(false);
         setEditingUser(null);
         fetchUsers();
+        if (updateData.password) {
+          alert('Member updated successfully! Password has been changed.');
+        }
       } else {
         alert(data.message || 'Error updating member');
       }
@@ -124,20 +166,29 @@ export default function TeamPage() {
     }
   };
 
-  const handleToggleActive = async (userId: string, currentStatus: boolean) => {
+  const openToggleConfirmModal = (userId: string, userName: string, currentStatus: boolean) => {
+    setUserToToggle({ id: userId, name: userName, currentStatus });
+    setShowToggleConfirmModal(true);
+  };
+
+  const handleToggleActive = async () => {
+    if (!userToToggle) return;
+
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch(`/api/users/${userId}`, {
+      const response = await fetch(`/api/users/${userToToggle.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`,
         },
-        body: JSON.stringify({ isActive: !currentStatus }),
+        body: JSON.stringify({ isActive: !userToToggle.currentStatus }),
       });
 
       const data = await response.json();
       if (data.success) {
+        setShowToggleConfirmModal(false);
+        setUserToToggle(null);
         fetchUsers();
       } else {
         alert(data.message || 'Error updating user status');
@@ -148,12 +199,17 @@ export default function TeamPage() {
     }
   };
 
-  const handleDelete = async (userId: string) => {
-    if (!confirm('Are you sure you want to delete this team member?')) return;
+  const openDeleteConfirmModal = (userId: string, userName: string) => {
+    setUserToDelete({ id: userId, name: userName });
+    setShowDeleteConfirmModal(true);
+  };
+
+  const handleDelete = async () => {
+    if (!userToDelete) return;
 
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch(`/api/users/${userId}`, {
+      const response = await fetch(`/api/users/${userToDelete.id}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -162,6 +218,8 @@ export default function TeamPage() {
 
       const data = await response.json();
       if (data.success) {
+        setShowDeleteConfirmModal(false);
+        setUserToDelete(null);
         fetchUsers();
       } else {
         alert(data.message || 'Error deleting member');
@@ -178,9 +236,25 @@ export default function TeamPage() {
       username: user.username,
       name: user.name,
       position: user.position,
+      department: user.department || '',
       role: user.role,
+      newPassword: '',
     });
     setShowEditModal(true);
+  };
+
+  const openAddModal = () => {
+    setAddFormData({
+      username: '',
+      name: '',
+      position: '',
+      department: currentUserRole === 'super-admin' ? '' : currentUserDepartment,
+      password: '',
+      role: 'member',
+    });
+    setShowAddDepartmentInput(false);
+    setNewDepartment('');
+    setShowAddModal(true);
   };
 
   const resetAddForm = () => {
@@ -188,12 +262,52 @@ export default function TeamPage() {
       username: '',
       name: '',
       position: '',
+      department: currentUserRole === 'super-admin' ? '' : currentUserDepartment,
       password: '',
+      role: 'member',
     });
+    setShowAddDepartmentInput(false);
+    setNewDepartment('');
+  };
+
+  const handleAddDepartmentChange = (value: string) => {
+    if (value === '__add_new__') {
+      setShowAddDepartmentInput(true);
+      setAddFormData({ ...addFormData, department: '' });
+    } else {
+      setShowAddDepartmentInput(false);
+      setAddFormData({ ...addFormData, department: value });
+    }
+  };
+
+  const handleEditDepartmentChange = (value: string) => {
+    if (value === '__add_new__') {
+      setShowEditDepartmentInput(true);
+      setEditFormData({ ...editFormData, department: '' });
+    } else {
+      setShowEditDepartmentInput(false);
+      setEditFormData({ ...editFormData, department: value });
+    }
+  };
+
+  const handleAddNewDepartment = () => {
+    if (newDepartment.trim() && !departments.includes(newDepartment.trim())) {
+      const updatedDepartments = [...departments, newDepartment.trim()].sort();
+      setDepartments(updatedDepartments);
+    }
+    if (showAddDepartmentInput) {
+      setAddFormData({ ...addFormData, department: newDepartment.trim() });
+      setShowAddDepartmentInput(false);
+    } else if (showEditDepartmentInput) {
+      setEditFormData({ ...editFormData, department: newDepartment.trim() });
+      setShowEditDepartmentInput(false);
+    }
+    setNewDepartment('');
   };
 
   const getRoleBadgeColor = (role: string) => {
     switch (role) {
+      case 'super-admin': return '#9b2c2c';
       case 'admin': return '#f56565';
       case 'manager': return '#ed8936';
       case 'member': return '#4299e1';
@@ -209,8 +323,9 @@ export default function TeamPage() {
     });
   };
 
-  const isAdmin = currentUserRole === 'admin';
-  const isManagerOrAdmin = currentUserRole === 'admin' || currentUserRole === 'manager';
+  const isAdmin = currentUserRole === 'admin' || currentUserRole === 'super-admin';
+  const isManagerOrAdmin = currentUserRole === 'admin' || currentUserRole === 'super-admin' || currentUserRole === 'manager';
+  const canDelete = currentUserRole === 'admin' || currentUserRole === 'super-admin' || currentUserRole === 'manager';
 
   if (loading) {
     return (
@@ -226,14 +341,26 @@ export default function TeamPage() {
         <div style={styles.header}>
           <h2 style={styles.title}>Team Members</h2>
           {isManagerOrAdmin && (
-            <button style={styles.primaryButton} onClick={() => setShowAddModal(true)}>
+            <button style={styles.primaryButton} onClick={openAddModal}>
               + Add Member
             </button>
           )}
         </div>
 
         <div style={styles.teamGrid}>
-          {users.map((user) => (
+          {users
+            .filter((user) => {
+              // Hide super-admin from everyone except super-admins themselves
+              if (user.role === 'super-admin' && currentUserRole !== 'super-admin') {
+                return false;
+              }
+              // Hide admin from managers
+              if (user.role === 'admin' && currentUserRole === 'manager') {
+                return false;
+              }
+              return true;
+            })
+            .map((user) => (
             <div key={user._id} style={styles.userCard}>
               <div style={styles.userHeader}>
                 <div style={styles.userAvatar}>
@@ -251,6 +378,7 @@ export default function TeamPage() {
 
               <h3 style={styles.userName}>{user.name}</h3>
               <p style={styles.userPosition}>{user.position}</p>
+              {user.department && <p style={styles.userDepartment}>{user.department}</p>}
 
               <div style={styles.userInfo}>
                 <div style={styles.infoItem}>
@@ -274,12 +402,12 @@ export default function TeamPage() {
                   </button>
                   <button
                     style={styles.toggleButton}
-                    onClick={() => handleToggleActive(user._id, user.isActive)}
+                    onClick={() => openToggleConfirmModal(user._id, user.name, user.isActive)}
                   >
                     {user.isActive ? 'Deactivate' : 'Activate'}
                   </button>
-                  {isAdmin && (
-                    <button style={styles.deleteButton} onClick={() => handleDelete(user._id)}>
+                  {canDelete && (
+                    <button style={styles.deleteButton} onClick={() => openDeleteConfirmModal(user._id, user.name)}>
                       Delete
                     </button>
                   )}
@@ -291,7 +419,7 @@ export default function TeamPage() {
 
         {/* Add Member Modal */}
         {showAddModal && (
-          <div style={styles.modalOverlay} onClick={() => setShowAddModal(false)}>
+          <div style={styles.modalOverlay} onClick={() => { setShowAddModal(false); resetAddForm(); }}>
             <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
               <h2 style={styles.modalTitle}>Add Team Member</h2>
               <form onSubmit={handleAddMember} style={styles.form}>
@@ -335,6 +463,64 @@ export default function TeamPage() {
                 </div>
 
                 <div style={styles.formGroup}>
+                  <label style={styles.label}>Department</label>
+                  {currentUserRole === 'super-admin' ? (
+                    !showAddDepartmentInput ? (
+                      <select
+                        style={styles.input}
+                        value={addFormData.department}
+                        onChange={(e) => handleAddDepartmentChange(e.target.value)}
+                      >
+                        <option value="">Select department...</option>
+                        {departments.map((dept) => (
+                          <option key={dept} value={dept}>{dept}</option>
+                        ))}
+                        <option value="__add_new__">+ Add New Department</option>
+                      </select>
+                    ) : (
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <input
+                          type="text"
+                          style={{ ...styles.input, flex: 1 }}
+                          value={newDepartment}
+                          onChange={(e) => setNewDepartment(e.target.value)}
+                          placeholder="Enter new department name"
+                          autoFocus
+                        />
+                        <button
+                          type="button"
+                          style={styles.addButton}
+                          onClick={handleAddNewDepartment}
+                        >
+                          Add
+                        </button>
+                        <button
+                          type="button"
+                          style={styles.cancelButton}
+                          onClick={() => {
+                            setShowAddDepartmentInput(false);
+                            setNewDepartment('');
+                          }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    )
+                  ) : (
+                    <>
+                      <input
+                        type="text"
+                        style={{...styles.input, ...styles.disabledInput}}
+                        value={addFormData.department || 'No department assigned'}
+                        disabled
+                        readOnly
+                      />
+                      <small style={styles.helpText}>Department is automatically set to your department</small>
+                    </>
+                  )}
+                </div>
+
+                <div style={styles.formGroup}>
                   <label style={styles.label}>Initial Password *</label>
                   <input
                     type="password"
@@ -347,6 +533,22 @@ export default function TeamPage() {
                   />
                   <small style={styles.helpText}>User can change this after first login</small>
                 </div>
+
+                {isAdmin && (
+                  <div style={styles.formGroup}>
+                    <label style={styles.label}>Access Level</label>
+                    <select
+                      style={styles.input}
+                      value={addFormData.role}
+                      onChange={(e) => setAddFormData({ ...addFormData, role: e.target.value as any })}
+                    >
+                      <option value="member">Team Member</option>
+                      <option value="manager">Manager</option>
+                      <option value="admin">Admin</option>
+                      <option value="super-admin">Super Admin</option>
+                    </select>
+                  </div>
+                )}
 
                 <div style={styles.formActions}>
                   <button type="submit" style={styles.primaryButton}>
@@ -370,7 +572,7 @@ export default function TeamPage() {
 
         {/* Edit Member Modal */}
         {showEditModal && editingUser && (
-          <div style={styles.modalOverlay} onClick={() => setShowEditModal(false)}>
+          <div style={styles.modalOverlay} onClick={() => { setShowEditModal(false); setShowEditDepartmentInput(false); setNewDepartment(''); }}>
             <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
               <h2 style={styles.modalTitle}>Edit Team Member</h2>
               <form onSubmit={handleEditMember} style={styles.form}>
@@ -410,6 +612,64 @@ export default function TeamPage() {
                   />
                 </div>
 
+                <div style={styles.formGroup}>
+                  <label style={styles.label}>Department</label>
+                  {currentUserRole === 'super-admin' ? (
+                    !showEditDepartmentInput ? (
+                      <select
+                        style={styles.input}
+                        value={editFormData.department}
+                        onChange={(e) => handleEditDepartmentChange(e.target.value)}
+                      >
+                        <option value="">Select department...</option>
+                        {departments.map((dept) => (
+                          <option key={dept} value={dept}>{dept}</option>
+                        ))}
+                        <option value="__add_new__">+ Add New Department</option>
+                      </select>
+                    ) : (
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <input
+                          type="text"
+                          style={{ ...styles.input, flex: 1 }}
+                          value={newDepartment}
+                          onChange={(e) => setNewDepartment(e.target.value)}
+                          placeholder="Enter new department name"
+                          autoFocus
+                        />
+                        <button
+                          type="button"
+                          style={styles.addButton}
+                          onClick={handleAddNewDepartment}
+                        >
+                          Add
+                        </button>
+                        <button
+                          type="button"
+                          style={styles.cancelButton}
+                          onClick={() => {
+                            setShowEditDepartmentInput(false);
+                            setNewDepartment('');
+                          }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    )
+                  ) : (
+                    <>
+                      <input
+                        type="text"
+                        style={{...styles.input, ...styles.disabledInput}}
+                        value={editFormData.department || 'No department assigned'}
+                        disabled
+                        readOnly
+                      />
+                      <small style={styles.helpText}>Department cannot be changed</small>
+                    </>
+                  )}
+                </div>
+
                 {isAdmin && (
                   <div style={styles.formGroup}>
                     <label style={styles.label}>Access Level</label>
@@ -421,9 +681,25 @@ export default function TeamPage() {
                       <option value="member">Team Member</option>
                       <option value="manager">Manager</option>
                       <option value="admin">Admin</option>
+                      <option value="super-admin">Super Admin</option>
                     </select>
                   </div>
                 )}
+
+                <div style={styles.formGroup}>
+                  <label style={styles.label}>Change Password</label>
+                  <input
+                    type="password"
+                    style={styles.input}
+                    value={editFormData.newPassword}
+                    onChange={(e) => setEditFormData({ ...editFormData, newPassword: e.target.value })}
+                    placeholder="Leave blank to keep current password"
+                    minLength={6}
+                  />
+                  <small style={styles.helpText}>
+                    {editFormData.newPassword ? 'New password must be at least 6 characters' : 'Only fill this if you want to change the password'}
+                  </small>
+                </div>
 
                 <div style={styles.formActions}>
                   <button type="submit" style={styles.primaryButton}>
@@ -435,12 +711,90 @@ export default function TeamPage() {
                     onClick={() => {
                       setShowEditModal(false);
                       setEditingUser(null);
+                      setShowEditDepartmentInput(false);
+                      setNewDepartment('');
                     }}
                   >
                     Cancel
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        )}
+
+        {/* Toggle Active/Inactive Confirmation Modal */}
+        {showToggleConfirmModal && userToToggle && (
+          <div style={styles.modalOverlay} onClick={() => { setShowToggleConfirmModal(false); setUserToToggle(null); }}>
+            <div style={styles.confirmModal} onClick={(e) => e.stopPropagation()}>
+              <h2 style={styles.modalTitle}>
+                {userToToggle.currentStatus ? 'Deactivate' : 'Activate'} User
+              </h2>
+              <p style={styles.confirmText}>
+                Are you sure you want to {userToToggle.currentStatus ? 'deactivate' : 'activate'}{' '}
+                <strong>{userToToggle.name}</strong>?
+              </p>
+              {userToToggle.currentStatus && (
+                <p style={styles.warningText}>
+                  Deactivating this user will prevent them from logging in.
+                </p>
+              )}
+              <div style={styles.formActions}>
+                <button
+                  style={{
+                    ...styles.primaryButton,
+                    background: userToToggle.currentStatus ? '#f56565' : '#48bb78',
+                  }}
+                  onClick={handleToggleActive}
+                >
+                  {userToToggle.currentStatus ? 'Deactivate' : 'Activate'}
+                </button>
+                <button
+                  style={styles.secondaryButton}
+                  onClick={() => {
+                    setShowToggleConfirmModal(false);
+                    setUserToToggle(null);
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Delete User Confirmation Modal */}
+        {showDeleteConfirmModal && userToDelete && (
+          <div style={styles.modalOverlay} onClick={() => { setShowDeleteConfirmModal(false); setUserToDelete(null); }}>
+            <div style={styles.confirmModal} onClick={(e) => e.stopPropagation()}>
+              <h2 style={styles.modalTitle}>Delete User</h2>
+              <p style={styles.confirmText}>
+                Are you sure you want to permanently delete{' '}
+                <strong>{userToDelete.name}</strong>?
+              </p>
+              <p style={styles.dangerText}>
+                ⚠️ This action cannot be undone. All data associated with this user will be permanently removed.
+              </p>
+              <div style={styles.formActions}>
+                <button
+                  style={{
+                    ...styles.primaryButton,
+                    background: '#9b2c2c',
+                  }}
+                  onClick={handleDelete}
+                >
+                  Delete Permanently
+                </button>
+                <button
+                  style={styles.secondaryButton}
+                  onClick={() => {
+                    setShowDeleteConfirmModal(false);
+                    setUserToDelete(null);
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -523,7 +877,13 @@ const styles: { [key: string]: React.CSSProperties } = {
   userPosition: {
     fontSize: '14px',
     color: '#718096',
+    marginBottom: '4px',
+  },
+  userDepartment: {
+    fontSize: '13px',
+    color: '#a0aec0',
     marginBottom: '16px',
+    fontStyle: 'italic',
   },
   userInfo: {
     display: 'flex',
@@ -659,5 +1019,60 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontSize: '14px',
     fontWeight: '600',
     cursor: 'pointer',
+  },
+  addButton: {
+    padding: '10px 16px',
+    background: '#48bb78',
+    color: 'white',
+    border: 'none',
+    borderRadius: '6px',
+    fontSize: '14px',
+    fontWeight: '500',
+    cursor: 'pointer',
+    transition: 'background 0.2s',
+  },
+  cancelButton: {
+    padding: '10px 16px',
+    background: '#e2e8f0',
+    color: '#4a5568',
+    border: 'none',
+    borderRadius: '6px',
+    fontSize: '14px',
+    fontWeight: '500',
+    cursor: 'pointer',
+    transition: 'background 0.2s',
+  },
+  confirmModal: {
+    background: 'white',
+    borderRadius: '12px',
+    padding: '32px',
+    width: '90%',
+    maxWidth: '450px',
+    boxShadow: '0 10px 40px rgba(0, 0, 0, 0.2)',
+  },
+  confirmText: {
+    fontSize: '16px',
+    color: '#4a5568',
+    marginBottom: '16px',
+    lineHeight: '1.6',
+  },
+  warningText: {
+    fontSize: '14px',
+    color: '#f56565',
+    marginBottom: '24px',
+    padding: '12px',
+    background: '#fff5f5',
+    borderRadius: '6px',
+    borderLeft: '3px solid #f56565',
+  },
+  dangerText: {
+    fontSize: '14px',
+    color: '#9b2c2c',
+    marginBottom: '24px',
+    padding: '12px',
+    background: '#fff5f5',
+    borderRadius: '6px',
+    borderLeft: '3px solid #9b2c2c',
+    fontWeight: '600',
   },
 };

@@ -49,6 +49,11 @@ const backlogSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   },
+  department: {
+    type: String,
+    trim: true,
+    default: ''
+  },
   startedAt: {
     type: Date,
     default: null

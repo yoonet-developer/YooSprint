@@ -169,6 +169,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     borderRadius: '5px',
     outline: 'none',
     transition: 'border-color 0.3s',
+    fontFamily: 'inherit',
   },
   button: {
     padding: '14px',
@@ -180,6 +181,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     borderRadius: '5px',
     marginTop: '10px',
     transition: 'transform 0.2s',
+    fontFamily: 'inherit',
   },
   footer: {
     marginTop: '30px',

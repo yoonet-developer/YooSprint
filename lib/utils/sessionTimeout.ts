@@ -9,7 +9,6 @@ export function resetInactivityTimer(onTimeout: () => void) {
   }
 
   inactivityTimer = setTimeout(() => {
-    console.log('Session expired due to inactivity');
     onTimeout();
   }, INACTIVITY_TIMEOUT);
 }

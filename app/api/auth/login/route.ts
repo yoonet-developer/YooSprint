@@ -58,6 +58,7 @@ export async function POST(request: NextRequest) {
         email: user.email,
         role: user.role,
         position: user.position,
+        department: user.department,
       },
     });
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import AppLayout from '@/components/shared/AppLayout';
 
 interface Backlog {
@@ -31,6 +31,7 @@ interface User {
   name: string;
   email: string;
   position: string;
+  role: string;
 }
 
 interface Sprint {
@@ -47,7 +48,9 @@ export default function BacklogsPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [sprints, setSprints] = useState<Sprint[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState('backlog');
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [filter, setFilter] = useState('all');
+  const [searchQuery, setSearchQuery] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
@@ -57,7 +60,8 @@ export default function BacklogsPage() {
   const [showDeleteWarningModal, setShowDeleteWarningModal] = useState(false);
   const [backlogDeleteWarning, setBacklogDeleteWarning] = useState<Backlog | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 4;
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
+  const itemsPerPage = viewMode === 'grid' ? 8 : 4;
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -67,8 +71,32 @@ export default function BacklogsPage() {
     assignee: '',
   });
   const [projects, setProjects] = useState<string[]>([]);
+  const [isAddingNewProject, setIsAddingNewProject] = useState(false);
+  const [newProjectName, setNewProjectName] = useState('');
+  const [projectSearchQuery, setProjectSearchQuery] = useState('');
+  const [showProjectDropdown, setShowProjectDropdown] = useState(false);
+  const projectDropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (projectDropdownRef.current && !projectDropdownRef.current.contains(event.target as Node)) {
+        setShowProjectDropdown(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+  useEffect(() => {
+    // Get current user from localStorage
+    const userData = localStorage.getItem('user');
+    if (userData) {
+      setCurrentUser(JSON.parse(userData));
+    }
+
     fetchBacklogs();
     fetchUsers();
     fetchSprints();
@@ -76,8 +104,12 @@ export default function BacklogsPage() {
 
   useEffect(() => {
     applyFilter();
-    setCurrentPage(1); // Reset to page 1 when filter changes
-  }, [backlogs, filter]);
+    setCurrentPage(1); // Reset to page 1 when filter or search changes
+  }, [backlogs, filter, searchQuery]);
+
+  useEffect(() => {
+    setCurrentPage(1); // Reset to page 1 when view mode changes
+  }, [viewMode]);
 
   const fetchBacklogs = async () => {
     try {
@@ -93,6 +125,8 @@ export default function BacklogsPage() {
         // Extract unique projects
         const uniqueProjects = Array.from(new Set(data.backlogs.map((b: Backlog) => b.project)));
         setProjects(uniqueProjects as string[]);
+      } else {
+        console.error('[Frontend] Failed to fetch backlogs:', data.message);
       }
     } catch (error) {
       console.error('Error fetching backlogs:', error);
@@ -136,11 +170,33 @@ export default function BacklogsPage() {
   };
 
   const applyFilter = () => {
+    let filtered = backlogs;
+
+    // Apply status filter
     if (filter === 'all') {
-      setFilteredBacklogs(backlogs);
+      filtered = backlogs;
+    } else if (filter === 'done') {
+      // Show items where status is 'done' OR taskStatus is 'completed'
+      filtered = backlogs.filter(b => b.status === 'done' || b.taskStatus === 'completed');
+    } else if (filter === 'in-sprint') {
+      // Show items in sprint that are NOT completed
+      filtered = backlogs.filter(b => b.status === 'in-sprint' && b.taskStatus !== 'completed');
     } else {
-      setFilteredBacklogs(backlogs.filter(b => b.status === filter));
+      filtered = backlogs.filter(b => b.status === filter);
     }
+
+    // Apply search filter
+    if (searchQuery.trim() !== '') {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(b =>
+        b.title.toLowerCase().includes(query) ||
+        b.description?.toLowerCase().includes(query) ||
+        b.project.toLowerCase().includes(query) ||
+        b.assignee?.name.toLowerCase().includes(query)
+      );
+    }
+
+    setFilteredBacklogs(filtered);
   };
 
   // Pagination calculations
@@ -180,12 +236,14 @@ export default function BacklogsPage() {
       });
 
       const data = await response.json();
+
       if (data.success) {
         setShowModal(false);
         resetForm();
-        fetchBacklogs();
+        await fetchBacklogs();
         showSuccess(editingBacklog ? 'Backlog item updated successfully!' : 'Backlog item created successfully!');
       } else {
+        console.error('[Frontend] Failed to save backlog:', data.message);
         alert(data.message || 'Error saving backlog');
       }
     } catch (error) {
@@ -306,6 +364,8 @@ export default function BacklogsPage() {
       assignee: '',
     });
     setEditingBacklog(null);
+    setIsAddingNewProject(false);
+    setNewProjectName('');
   };
 
   const openAddModal = () => {
@@ -335,24 +395,86 @@ export default function BacklogsPage() {
       <div style={styles.container}>
         <div style={styles.header}>
           <h2 style={styles.title}>Product Backlogs</h2>
-          <button style={styles.primaryButton} onClick={openAddModal}>
-            + Add Backlog Item
-          </button>
+          <div style={styles.headerRight}>
+            <div style={styles.viewToggle}>
+              <button
+                style={{
+                  ...styles.viewButton,
+                  ...(viewMode === 'list' ? styles.viewButtonActive : {}),
+                }}
+                onClick={() => setViewMode('list')}
+                title="List View"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" viewBox="0 0 16 16">
+                  <path fillRule="evenodd" d="M2.5 12a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5m0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5m0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5"/>
+                </svg>
+              </button>
+              <button
+                style={{
+                  ...styles.viewButton,
+                  ...(viewMode === 'grid' ? styles.viewButtonActive : {}),
+                }}
+                onClick={() => setViewMode('grid')}
+                title="Grid View"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" viewBox="0 0 16 16">
+                  <path d="M1 2.5A1.5 1.5 0 0 1 2.5 1h3A1.5 1.5 0 0 1 7 2.5v3A1.5 1.5 0 0 1 5.5 7h-3A1.5 1.5 0 0 1 1 5.5zm8 0A1.5 1.5 0 0 1 10.5 1h3A1.5 1.5 0 0 1 15 2.5v3A1.5 1.5 0 0 1 13.5 7h-3A1.5 1.5 0 0 1 9 5.5zM1 10.5A1.5 1.5 0 0 1 2.5 9h3A1.5 1.5 0 0 1 7 10.5v3A1.5 1.5 0 0 1 5.5 15h-3A1.5 1.5 0 0 1 1 13.5zm8 0A1.5 1.5 0 0 1 10.5 9h3a1.5 1.5 0 0 1 1.5 1.5v3a1.5 1.5 0 0 1-1.5 1.5h-3A1.5 1.5 0 0 1 9 13.5z"/>
+                </svg>
+              </button>
+            </div>
+            {currentUser?.role !== 'member' && (
+              <button style={styles.primaryButton} onClick={openAddModal}>
+                + Add Backlog Item
+              </button>
+            )}
+          </div>
         </div>
 
-        <div style={styles.filterRow}>
-          {['all', 'backlog', 'in-sprint', 'done'].map((f) => (
-            <button
-              key={f}
-              style={{
-                ...styles.filterButton,
-                ...(filter === f ? styles.filterButtonActive : {}),
-              }}
-              onClick={() => setFilter(f)}
+        <div style={styles.filterAndSearchRow}>
+          <div style={styles.filterRow}>
+            {['all', 'backlog', 'in-sprint', 'done'].map((f) => (
+              <button
+                key={f}
+                style={{
+                  ...styles.filterButton,
+                  ...(filter === f ? styles.filterButtonActive : {}),
+                }}
+                onClick={() => setFilter(f)}
+              >
+                {f === 'all' ? 'All' : f === 'backlog' ? 'Available' : f === 'in-sprint' ? 'In Sprint' : 'Completed'}
+              </button>
+            ))}
+          </div>
+
+          {/* Search Bar */}
+          <div style={styles.searchContainer}>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="16"
+              height="16"
+              fill="currentColor"
+              viewBox="0 0 16 16"
+              style={styles.searchIcon}
             >
-              {f === 'all' ? 'All' : f === 'backlog' ? 'Available' : f === 'in-sprint' ? 'In Sprint' : 'Completed'}
-            </button>
-          ))}
+              <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z"/>
+            </svg>
+            <input
+              type="text"
+              style={styles.searchInput}
+              placeholder="Search backlogs"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+            {searchQuery && (
+              <button
+                style={styles.clearSearchButton}
+                onClick={() => setSearchQuery('')}
+                title="Clear search"
+              >
+                ✕
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Pagination */}
@@ -384,7 +506,7 @@ export default function BacklogsPage() {
           </div>
         )}
 
-        <div style={styles.backlogGrid}>
+        <div style={viewMode === 'grid' ? styles.backlogGridView : styles.backlogGrid}>
           {filteredBacklogs.length === 0 ? (
             <div style={styles.empty}>No backlog items found</div>
           ) : (
@@ -392,7 +514,7 @@ export default function BacklogsPage() {
               <div
                 key={backlog._id}
                 style={{
-                  ...styles.backlogCard,
+                  ...(viewMode === 'grid' ? styles.backlogCardGrid : styles.backlogCard),
                   borderLeft: `4px solid ${getPriorityColor(backlog.priority)}`,
                 }}
               >
@@ -405,18 +527,20 @@ export default function BacklogsPage() {
                     style={{
                       ...styles.statusBadge,
                       backgroundColor:
-                        backlog.status === 'done'
+                        backlog.status === 'done' || backlog.taskStatus === 'completed'
                           ? '#48bb78'
                           : backlog.status === 'in-sprint'
                           ? '#CDE5F380'
                           : '#718096',
                       color:
-                        backlog.status === 'in-sprint'
+                        (backlog.status === 'done' || backlog.taskStatus === 'completed')
+                          ? 'white'
+                          : backlog.status === 'in-sprint'
                           ? '#879BFF'
                           : 'white',
                     }}
                   >
-                    {backlog.status === 'done' ? 'completed' : backlog.status.replace('-', ' ')}
+                    {backlog.status === 'done' || backlog.taskStatus === 'completed' ? 'completed' : backlog.status.replace('-', ' ')}
                   </span>
                 </div>
 
@@ -424,8 +548,8 @@ export default function BacklogsPage() {
                   <p style={styles.description}>{backlog.description}</p>
                 )}
 
-                <div style={styles.cardMeta}>
-                  <div style={styles.metaLeft}>
+                <div style={viewMode === 'grid' ? styles.cardMetaGrid : styles.cardMeta}>
+                  <div style={viewMode === 'grid' ? styles.metaLeftGrid : styles.metaLeft}>
                     <div style={styles.metaItem}>
                       <strong>Assigned to:</strong> {backlog.assignee?.name || 'Unassigned'}
                     </div>
@@ -433,40 +557,42 @@ export default function BacklogsPage() {
                       <strong>Sprint:</strong> {backlog.sprint?.name || 'Not in sprint'}
                     </div>
                   </div>
-                  <div style={styles.cardActions}>
-                    {backlog.status === 'backlog' && sprints.length > 0 && (
-                      <select
-                        style={styles.sprintSelect}
-                        onChange={(e) => {
-                          if (e.target.value) {
-                            handleMoveToSprint(backlog._id, e.target.value);
-                          }
-                        }}
-                        defaultValue=""
-                      >
-                        <option value="" style={styles.selectOption}>Add to Sprint</option>
-                        {sprints.map((sprint) => (
-                          <option key={sprint._id} value={sprint._id} style={styles.selectOption}>
-                            {sprint.name}
-                          </option>
-                        ))}
-                      </select>
-                    )}
-                    {backlog.sprint && (
-                      <button
-                        style={styles.removeSprintButton}
-                        onClick={() => openRemoveConfirmModal(backlog)}
-                      >
-                        Remove from Sprint
+                  {currentUser?.role !== 'member' && (
+                    <div style={viewMode === 'grid' ? styles.cardActionsGrid : styles.cardActions}>
+                      {backlog.status === 'backlog' && sprints.length > 0 && (
+                        <select
+                          style={viewMode === 'grid' ? styles.sprintSelectGrid : styles.sprintSelect}
+                          onChange={(e) => {
+                            if (e.target.value) {
+                              handleMoveToSprint(backlog._id, e.target.value);
+                            }
+                          }}
+                          defaultValue=""
+                        >
+                          <option value="" style={styles.selectOption}>Add to Sprint</option>
+                          {sprints.map((sprint) => (
+                            <option key={sprint._id} value={sprint._id} style={styles.selectOption}>
+                              {sprint.name}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                      {backlog.sprint && (
+                        <button
+                          style={viewMode === 'grid' ? styles.removeSprintButtonGrid : styles.removeSprintButton}
+                          onClick={() => openRemoveConfirmModal(backlog)}
+                        >
+                          Remove from Sprint
+                        </button>
+                      )}
+                      <button style={viewMode === 'grid' ? styles.actionButtonGrid : styles.actionButton} onClick={() => handleEdit(backlog)}>
+                        Edit
                       </button>
-                    )}
-                    <button style={styles.actionButton} onClick={() => handleEdit(backlog)}>
-                      Edit
-                    </button>
-                    <button style={styles.deleteButton} onClick={() => handleDelete(backlog)}>
-                      Delete
-                    </button>
-                  </div>
+                      <button style={viewMode === 'grid' ? styles.deleteButtonGrid : styles.deleteButton} onClick={() => handleDelete(backlog)}>
+                        Delete
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             ))
@@ -504,27 +630,88 @@ export default function BacklogsPage() {
 
                 <div style={styles.formGroup}>
                   <label style={styles.label}>Project *</label>
-                  {projects.length > 0 ? (
-                    <select
-                      style={styles.input}
-                      value={formData.project}
-                      onChange={(e) => setFormData({ ...formData, project: e.target.value })}
-                      required
-                    >
-                      <option value="">Select or type new...</option>
-                      {projects.map((p) => (
-                        <option key={p} value={p}>{p}</option>
-                      ))}
-                    </select>
-                  ) : null}
-                  <input
-                    type="text"
-                    style={{ ...styles.input, marginTop: '8px' }}
-                    placeholder="Or enter new project name"
-                    value={formData.project}
-                    onChange={(e) => setFormData({ ...formData, project: e.target.value })}
-                    required
-                  />
+                  {!isAddingNewProject ? (
+                    <div ref={projectDropdownRef} style={{ position: 'relative' }}>
+                      <input
+                        type="text"
+                        style={{ ...styles.input, width: '100%', boxSizing: 'border-box' }}
+                        value={projectSearchQuery || formData.project}
+                        onChange={(e) => {
+                          setProjectSearchQuery(e.target.value);
+                          setShowProjectDropdown(true);
+                        }}
+                        onFocus={() => setShowProjectDropdown(true)}
+                        placeholder="Search or select project..."
+                        required={!formData.project}
+                      />
+                      {showProjectDropdown && (
+                        <div style={styles.searchableDropdown}>
+                          {projects
+                            .filter((p) =>
+                              p.toLowerCase().includes(projectSearchQuery.toLowerCase())
+                            )
+                            .map((p) => (
+                              <div
+                                key={p}
+                                style={styles.dropdownItem}
+                                onClick={() => {
+                                  setFormData({ ...formData, project: p });
+                                  setProjectSearchQuery('');
+                                  setShowProjectDropdown(false);
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.backgroundColor = '#f7fafc';
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.backgroundColor = 'white';
+                                }}
+                              >
+                                {p}
+                              </div>
+                            ))}
+                          <div
+                            style={{ ...styles.dropdownItem, color: '#667eea', fontWeight: '500' }}
+                            onClick={() => {
+                              setIsAddingNewProject(true);
+                              setFormData({ ...formData, project: '' });
+                              setProjectSearchQuery('');
+                              setShowProjectDropdown(false);
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.backgroundColor = '#f7fafc';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.backgroundColor = 'white';
+                            }}
+                          >
+                            + Add New Project
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                      <input
+                        type="text"
+                        style={{ ...styles.input, flex: 1 }}
+                        placeholder="Enter new project name"
+                        value={formData.project}
+                        onChange={(e) => setFormData({ ...formData, project: e.target.value })}
+                        required
+                        autoFocus
+                      />
+                      <button
+                        type="button"
+                        style={{ ...styles.backToSelectButton, marginTop: 0, whiteSpace: 'nowrap', padding: '10px 12px' }}
+                        onClick={() => {
+                          setIsAddingNewProject(false);
+                          setFormData({ ...formData, project: '' });
+                        }}
+                      >
+                        ← Back to select
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 <div style={styles.formRow}>
@@ -551,11 +738,13 @@ export default function BacklogsPage() {
                     onChange={(e) => setFormData({ ...formData, assignee: e.target.value })}
                   >
                     <option value="">Unassigned</option>
-                    {users.map((user) => (
-                      <option key={user._id} value={user._id}>
-                        {user.name} ({user.position})
-                      </option>
-                    ))}
+                    {users
+                      .filter(user => user.role !== 'super admin' && user.role !== 'super-admin' && user.role !== 'admin')
+                      .map((user) => (
+                        <option key={user._id} value={user._id}>
+                          {user.name} ({user.position})
+                        </option>
+                      ))}
                   </select>
                 </div>
 
@@ -662,6 +851,36 @@ const styles: { [key: string]: React.CSSProperties } = {
     color: '#2d3748',
     margin: 0,
   },
+  headerRight: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+  },
+  viewToggle: {
+    display: 'flex',
+    gap: '8px',
+    background: '#f7fafc',
+    padding: '4px',
+    borderRadius: '8px',
+    border: '1px solid #e2e8f0',
+  },
+  viewButton: {
+    padding: '8px 12px',
+    border: 'none',
+    background: 'transparent',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    color: '#718096',
+    transition: 'all 0.2s',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  viewButtonActive: {
+    background: 'white',
+    color: '#FF6495',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+  },
   primaryButton: {
     background: '#FF6495',
     color: 'white',
@@ -673,10 +892,64 @@ const styles: { [key: string]: React.CSSProperties } = {
     cursor: 'pointer',
     transition: 'transform 0.2s',
   },
+  filterAndSearchRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: '16px',
+    marginBottom: '24px',
+    flexWrap: 'wrap',
+  },
   filterRow: {
     display: 'flex',
     gap: '12px',
-    marginBottom: '24px',
+    flex: 1,
+    minWidth: '0',
+    flexWrap: 'wrap',
+  },
+  searchContainer: {
+    position: 'relative',
+    width: '25%',
+    minWidth: '200px',
+    maxWidth: '300px',
+    flexShrink: 0,
+    boxSizing: 'border-box',
+  },
+  searchIcon: {
+    position: 'absolute',
+    left: '12px',
+    top: '50%',
+    transform: 'translateY(-50%)',
+    color: '#a0aec0',
+    pointerEvents: 'none' as const,
+  },
+  searchInput: {
+    width: '100%',
+    padding: '8px 40px 8px 36px',
+    border: '2px solid #e2e8f0',
+    borderRadius: '6px',
+    fontSize: '14px',
+    outline: 'none',
+    transition: 'border-color 0.2s',
+    fontFamily: 'inherit',
+    boxSizing: 'border-box',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  },
+  clearSearchButton: {
+    position: 'absolute',
+    right: '12px',
+    top: '50%',
+    transform: 'translateY(-50%)',
+    background: 'transparent',
+    border: 'none',
+    color: '#a0aec0',
+    fontSize: '18px',
+    cursor: 'pointer',
+    padding: '4px 8px',
+    borderRadius: '4px',
+    transition: 'all 0.2s',
   },
   filterButton: {
     padding: '8px 16px',
@@ -700,12 +973,29 @@ const styles: { [key: string]: React.CSSProperties } = {
     flexDirection: 'column',
     gap: '16px',
   },
+  backlogGridView: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))',
+    columnGap: '32px',
+    rowGap: '60px',
+  },
   backlogCard: {
     background: 'white',
     padding: '20px',
     borderRadius: '10px',
     boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
     transition: 'transform 0.2s, box-shadow 0.2s',
+  },
+  backlogCardGrid: {
+    background: 'white',
+    padding: '20px',
+    borderRadius: '10px',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+    transition: 'transform 0.2s, box-shadow 0.2s',
+    display: 'flex',
+    flexDirection: 'column',
+    height: '100%',
+    minHeight: '300px',
   },
   cardHeader: {
     display: 'flex',
@@ -738,6 +1028,11 @@ const styles: { [key: string]: React.CSSProperties } = {
     color: '#718096',
     marginBottom: '16px',
     lineHeight: '1.5',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    display: '-webkit-box',
+    WebkitLineClamp: 3,
+    WebkitBoxOrient: 'vertical',
   },
   cardMeta: {
     display: 'flex',
@@ -747,12 +1042,28 @@ const styles: { [key: string]: React.CSSProperties } = {
     paddingTop: '16px',
     gap: '16px',
   },
+  cardMetaGrid: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '12px',
+    marginTop: 'auto',
+    paddingTop: '16px',
+  },
   metaLeft: {
     display: 'flex',
     flexDirection: 'column',
     gap: '6px',
     fontSize: '14px',
     color: '#4a5568',
+  },
+  metaLeftGrid: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
+    fontSize: '14px',
+    color: '#4a5568',
+    paddingBottom: '12px',
+    borderBottom: '1px solid #e2e8f0',
   },
   metaItem: {
     display: 'flex',
@@ -764,6 +1075,13 @@ const styles: { [key: string]: React.CSSProperties } = {
     flexWrap: 'wrap',
     alignItems: 'center',
   },
+  cardActionsGrid: {
+    display: 'flex',
+    flexDirection: 'row',
+    gap: '8px',
+    width: '100%',
+    flexWrap: 'wrap',
+  },
   actionButton: {
     padding: '6px 14px',
     border: '1px solid #667eea',
@@ -773,6 +1091,18 @@ const styles: { [key: string]: React.CSSProperties } = {
     cursor: 'pointer',
     fontSize: '13px',
     fontWeight: '500',
+  },
+  actionButtonGrid: {
+    padding: '8px 14px',
+    border: '1px solid #667eea',
+    background: 'white',
+    color: '#667eea',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontSize: '13px',
+    fontWeight: '500',
+    flex: '1',
+    textAlign: 'center',
   },
   sprintSelect: {
     padding: '6px 14px',
@@ -785,6 +1115,20 @@ const styles: { [key: string]: React.CSSProperties } = {
     cursor: 'pointer',
     transition: 'all 0.2s',
     outline: 'none',
+  },
+  sprintSelectGrid: {
+    padding: '8px 14px',
+    border: '2px solid #d3d3d3',
+    background: 'white',
+    color: '#879BFF',
+    borderRadius: '6px',
+    fontSize: '13px',
+    fontWeight: '600',
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+    outline: 'none',
+    flex: '1',
+    textAlign: 'center',
   },
   selectOption: {
     padding: '10px 12px',
@@ -801,6 +1145,18 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontSize: '13px',
     fontWeight: '500',
   },
+  deleteButtonGrid: {
+    padding: '8px 14px',
+    border: '1px solid #f56565',
+    background: 'white',
+    color: '#f56565',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontSize: '13px',
+    fontWeight: '500',
+    flex: '1',
+    textAlign: 'center',
+  },
   removeSprintButton: {
     padding: '6px 14px',
     border: '1px solid #879BFF',
@@ -810,6 +1166,18 @@ const styles: { [key: string]: React.CSSProperties } = {
     cursor: 'pointer',
     fontSize: '13px',
     fontWeight: '500',
+  },
+  removeSprintButtonGrid: {
+    padding: '8px 14px',
+    border: '1px solid #879BFF',
+    background: 'white',
+    color: '#879BFF',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontSize: '13px',
+    fontWeight: '500',
+    flex: '1',
+    textAlign: 'center',
   },
   loading: {
     textAlign: 'center',
@@ -887,6 +1255,43 @@ const styles: { [key: string]: React.CSSProperties } = {
     outline: 'none',
     resize: 'vertical',
     fontFamily: 'inherit',
+  },
+  helpText: {
+    fontSize: '12px',
+    color: '#718096',
+    marginTop: '4px',
+  },
+  backToSelectButton: {
+    marginTop: '8px',
+    padding: '8px 12px',
+    border: '1px solid #e2e8f0',
+    background: 'white',
+    color: '#667eea',
+    borderRadius: '6px',
+    fontSize: '13px',
+    fontWeight: '500',
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+  },
+  searchableDropdown: {
+    position: 'absolute',
+    top: '100%',
+    left: 0,
+    right: 0,
+    background: 'white',
+    border: '1px solid #e2e8f0',
+    borderRadius: '6px',
+    marginTop: '4px',
+    maxHeight: '200px',
+    overflowY: 'auto',
+    zIndex: 1000,
+    boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+  },
+  dropdownItem: {
+    padding: '10px 12px',
+    cursor: 'pointer',
+    transition: 'background-color 0.2s',
+    fontSize: '14px',
   },
   formActions: {
     display: 'flex',
