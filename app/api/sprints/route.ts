@@ -12,11 +12,10 @@ export async function GET(request: NextRequest) {
 
     // For members: find sprints that have backlogs assigned to them
     if (user.role === 'member') {
-      // Find all backlogs assigned to this member
+      // Find all backlogs assigned to this member in active/completed sprints
       const userBacklogs = await Backlog.find({
         assignee: user._id,
-        department: user.department,
-        taskStatus: { $in: ['active', 'completed'] } // Only active or completed
+        department: user.department
       }).select('sprint');
 
       // Get unique sprint IDs
@@ -39,19 +38,39 @@ export async function GET(request: NextRequest) {
           }
         ]
       })
-        .populate('backlogItems')
         .populate('managers', 'name email position department')
         .sort({ createdAt: -1 });
     } else {
       // For other roles (admin, manager, super-admin), use the standard filter
       const filter = getDepartmentFilter(user);
       sprints = await Sprint.find(filter)
-        .populate('backlogItems')
         .populate('managers', 'name email position department')
         .sort({ createdAt: -1 });
     }
 
-    return successResponse({ sprints });
+    // Fetch backlog items for all sprints in a single query
+    const sprintIds = sprints.map((s: any) => s._id);
+    const allBacklogs = await Backlog.find({ sprint: { $in: sprintIds } })
+      .populate('assignee', 'name email position department')
+      .populate('createdBy', 'name email');
+
+    // Group backlogs by sprint ID
+    const backlogsBySprint = allBacklogs.reduce((acc: any, backlog: any) => {
+      const sprintId = backlog.sprint.toString();
+      if (!acc[sprintId]) {
+        acc[sprintId] = [];
+      }
+      acc[sprintId].push(backlog);
+      return acc;
+    }, {});
+
+    // Attach backlog items to each sprint
+    const sprintsWithBacklogs = sprints.map((sprint: any) => ({
+      ...sprint.toObject(),
+      backlogItems: backlogsBySprint[sprint._id.toString()] || []
+    }));
+
+    return successResponse({ sprints: sprintsWithBacklogs });
   } catch (error: any) {
     if (error.message === 'Unauthorized') {
       return errorResponse('Not authorized', 401);
