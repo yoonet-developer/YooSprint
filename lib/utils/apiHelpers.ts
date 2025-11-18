@@ -51,21 +51,9 @@ export function getDepartmentFilter(user: any) {
     { managers: user._id }   // Sprints where they are a manager
   ];
 
-  // Members can only see sprints/backlogs with status "active" or "completed"
+  // Members can only see items they created or are assigned to
   if (user.role === 'member') {
-    // For sprints: only show active or completed ones they're involved in
-    // For backlogs/tasks: only show active or completed ones assigned to them or created by them
-    filter.$and = [
-      { $or: conditions },
-      {
-        $or: [
-          { status: { $in: ['active', 'completed'] } },      // For sprints
-          { taskStatus: { $in: ['active', 'completed'] } },  // For backlogs
-          { status: { $exists: false } },                     // For tasks without status field
-          { taskStatus: { $exists: false } }                  // For items without taskStatus field
-        ]
-      }
-    ];
+    filter.$or = conditions;
   }
 
   // Also filter by department if user has one
