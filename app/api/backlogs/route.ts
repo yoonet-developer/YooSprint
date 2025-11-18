@@ -10,10 +10,23 @@ export async function GET(request: NextRequest) {
     // Filter by department unless user is super-admin
     const filter = getDepartmentFilter(user);
 
-    const backlogs = await Backlog.find(filter)
+    let backlogs = await Backlog.find(filter)
       .populate('assignee', 'name email position department')
       .populate('sprint', 'name status startDate endDate')
       .sort({ createdAt: -1 });
+
+    // For members: only show backlogs in sprints with 'active' or 'completed' status
+    // or backlogs not in any sprint
+    if (user.role === 'member') {
+      backlogs = backlogs.filter((backlog: any) => {
+        // Show backlogs not in any sprint
+        if (!backlog.sprint) {
+          return true;
+        }
+        // Show backlogs in active or completed sprints
+        return backlog.sprint.status === 'active' || backlog.sprint.status === 'completed';
+      });
+    }
 
     return successResponse({ backlogs });
   } catch (error: any) {
