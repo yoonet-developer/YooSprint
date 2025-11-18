@@ -101,22 +101,7 @@ export default function SprintsPage() {
       });
       const data = await response.json();
       if (data.success) {
-        // Fetch detailed info for each sprint (including backlogs)
-        const sprintsWithBacklogs = await Promise.all(
-          data.sprints.map(async (sprint: Sprint) => {
-            const detailsRes = await fetch(`/api/sprints/${sprint._id}`, {
-              headers: {
-                'Authorization': `Bearer ${token}`,
-              },
-            });
-            const detailsData = await detailsRes.json();
-            if (detailsData.success) {
-              return detailsData.sprint;
-            }
-            return sprint;
-          })
-        );
-        setSprints(sprintsWithBacklogs);
+        setSprints(data.sprints);
       }
     } catch (error) {
       console.error('Error fetching sprints:', error);
