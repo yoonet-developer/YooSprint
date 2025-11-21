@@ -59,6 +59,10 @@ export default function BacklogsPage() {
   const [backlogToRemove, setBacklogToRemove] = useState<Backlog | null>(null);
   const [showDeleteWarningModal, setShowDeleteWarningModal] = useState(false);
   const [backlogDeleteWarning, setBacklogDeleteWarning] = useState<Backlog | null>(null);
+  const [showAddToSprintModal, setShowAddToSprintModal] = useState(false);
+  const [backlogToAddToSprint, setBacklogToAddToSprint] = useState<Backlog | null>(null);
+  const [selectedSprintId, setSelectedSprintId] = useState<string>('');
+  const [sprintSearchQuery, setSprintSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
   const itemsPerPage = viewMode === 'grid' ? 8 : 4;
@@ -295,20 +299,32 @@ export default function BacklogsPage() {
     }
   };
 
-  const handleMoveToSprint = async (backlogId: string, sprintId: string) => {
+  const openAddToSprintModal = (backlog: Backlog) => {
+    setBacklogToAddToSprint(backlog);
+    setSelectedSprintId('');
+    setSprintSearchQuery('');
+    setShowAddToSprintModal(true);
+  };
+
+  const handleMoveToSprint = async () => {
+    if (!backlogToAddToSprint || !selectedSprintId) return;
+
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch(`/api/backlogs/${backlogId}`, {
+      const response = await fetch(`/api/backlogs/${backlogToAddToSprint._id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`,
         },
-        body: JSON.stringify({ sprint: sprintId, status: 'in-sprint' }),
+        body: JSON.stringify({ sprint: selectedSprintId, status: 'in-sprint' }),
       });
 
       const data = await response.json();
       if (data.success) {
+        setShowAddToSprintModal(false);
+        setBacklogToAddToSprint(null);
+        setSelectedSprintId('');
         fetchBacklogs();
         showSuccess('Backlog item added to sprint successfully!');
       } else {
@@ -517,78 +533,83 @@ export default function BacklogsPage() {
                   ...(viewMode === 'grid' ? styles.backlogCardGrid : styles.backlogCard),
                   borderLeft: `4px solid ${getPriorityColor(backlog.priority)}`,
                 }}
+                onMouseEnter={(e) => {
+                  if (viewMode === 'grid') {
+                    e.currentTarget.style.transform = 'translateY(-4px)';
+                    e.currentTarget.style.boxShadow = '0 8px 16px rgba(0,0,0,0.12)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (viewMode === 'grid') {
+                    e.currentTarget.style.transform = 'translateY(0)';
+                    e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.08)';
+                  }
+                }}
               >
                 <div style={styles.cardHeader}>
-                  <div>
+                  <div style={styles.cardHeaderContent}>
                     <h3 style={styles.cardTitle}>{backlog.title}</h3>
                     <p style={styles.cardProject}>{backlog.project}</p>
+                    {backlog.sprint && (
+                      <span style={styles.sprintNameBadge}>
+                        {backlog.sprint.name}
+                      </span>
+                    )}
                   </div>
-                  <span
-                    style={{
-                      ...styles.statusBadge,
-                      backgroundColor:
-                        backlog.status === 'done' || backlog.taskStatus === 'completed'
-                          ? '#48bb78'
-                          : backlog.status === 'in-sprint'
-                          ? '#CDE5F380'
-                          : '#718096',
-                      color:
-                        (backlog.status === 'done' || backlog.taskStatus === 'completed')
-                          ? 'white'
-                          : backlog.status === 'in-sprint'
-                          ? '#879BFF'
-                          : 'white',
-                    }}
-                  >
-                    {backlog.status === 'done' || backlog.taskStatus === 'completed' ? 'completed' : backlog.status.replace('-', ' ')}
-                  </span>
                 </div>
 
-                {backlog.description && (
+                {backlog.description ? (
                   <p style={styles.description}>{backlog.description}</p>
+                ) : (
+                  viewMode === 'grid' && (
+                    <p style={styles.noDescription}>No description</p>
+                  )
                 )}
 
                 <div style={viewMode === 'grid' ? styles.cardMetaGrid : styles.cardMeta}>
                   <div style={viewMode === 'grid' ? styles.metaLeftGrid : styles.metaLeft}>
                     <div style={styles.metaItem}>
-                      <strong>Assigned to:</strong> {backlog.assignee?.name || 'Unassigned'}
-                    </div>
-                    <div style={styles.metaItem}>
-                      <strong>Sprint:</strong> {backlog.sprint?.name || 'Not in sprint'}
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" style={{ color: '#718096', flexShrink: 0 }}>
+                        <path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6m2-3a2 2 0 1 1-4 0 2 2 0 0 1 4 0m4 8c0 1-1 1-1 1H3s-1 0-1-1 1-4 6-4 6 3 6 4m-1-.004c-.001-.246-.154-.986-.832-1.664C11.516 10.68 10.289 10 8 10s-3.516.68-4.168 1.332c-.678.678-.83 1.418-.832 1.664z"/>
+                      </svg>
+                      <span>{backlog.assignee?.name || 'Unassigned'}</span>
                     </div>
                   </div>
                   {currentUser?.role !== 'member' && (
                     <div style={viewMode === 'grid' ? styles.cardActionsGrid : styles.cardActions}>
                       {backlog.status === 'backlog' && sprints.length > 0 && (
-                        <select
+                        <button
                           style={viewMode === 'grid' ? styles.sprintSelectGrid : styles.sprintSelect}
-                          onChange={(e) => {
-                            if (e.target.value) {
-                              handleMoveToSprint(backlog._id, e.target.value);
-                            }
-                          }}
-                          defaultValue=""
+                          onClick={() => openAddToSprintModal(backlog)}
                         >
-                          <option value="" style={styles.selectOption}>Add to Sprint</option>
-                          {sprints.map((sprint) => (
-                            <option key={sprint._id} value={sprint._id} style={styles.selectOption}>
-                              {sprint.name}
-                            </option>
-                          ))}
-                        </select>
+                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16" style={{ marginRight: '6px', verticalAlign: 'middle' }}>
+                            <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4"/>
+                          </svg>
+                          Add to Sprint
+                        </button>
                       )}
                       {backlog.sprint && (
                         <button
                           style={viewMode === 'grid' ? styles.removeSprintButtonGrid : styles.removeSprintButton}
                           onClick={() => openRemoveConfirmModal(backlog)}
                         >
-                          Remove from Sprint
+                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16" style={{ marginRight: '6px', verticalAlign: 'middle' }}>
+                            <path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8z"/>
+                          </svg>
+                          Remove
                         </button>
                       )}
                       <button style={viewMode === 'grid' ? styles.actionButtonGrid : styles.actionButton} onClick={() => handleEdit(backlog)}>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16" style={{ marginRight: '6px', verticalAlign: 'middle' }}>
+                          <path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207zm1.586 3L10.5 3.207 4 9.707V10h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.293zm-9.761 5.175-.106.106-1.528 3.821 3.821-1.528.106-.106A.5.5 0 0 1 5 12.5V12h-.5a.5.5 0 0 1-.5-.5V11h-.5a.5.5 0 0 1-.468-.325"/>
+                        </svg>
                         Edit
                       </button>
                       <button style={viewMode === 'grid' ? styles.deleteButtonGrid : styles.deleteButton} onClick={() => handleDelete(backlog)}>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16" style={{ marginRight: '6px', verticalAlign: 'middle' }}>
+                          <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z"/>
+                          <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z"/>
+                        </svg>
                         Delete
                       </button>
                     </div>
@@ -821,6 +842,138 @@ export default function BacklogsPage() {
           </div>
         )}
 
+        {/* Add to Sprint Modal */}
+        {showAddToSprintModal && backlogToAddToSprint && (
+          <div style={styles.modalOverlay} onClick={() => setShowAddToSprintModal(false)}>
+            <div style={styles.addToSprintModal} onClick={(e) => e.stopPropagation()}>
+              <h2 style={styles.addToSprintModalTitle}>Add to Sprint</h2>
+              <p style={styles.addToSprintModalSubtitle}>
+                Select a sprint for <strong>{backlogToAddToSprint.title}</strong>
+              </p>
+
+              {/* Search Bar */}
+              <div style={styles.sprintSearchContainer}>
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="16"
+                  height="16"
+                  fill="currentColor"
+                  viewBox="0 0 16 16"
+                  style={styles.sprintSearchIcon}
+                >
+                  <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z"/>
+                </svg>
+                <input
+                  type="text"
+                  style={styles.sprintSearchInput}
+                  placeholder="Search sprints by name..."
+                  value={sprintSearchQuery}
+                  onChange={(e) => setSprintSearchQuery(e.target.value)}
+                />
+                {sprintSearchQuery && (
+                  <button
+                    style={styles.clearSprintSearchButton}
+                    onClick={() => setSprintSearchQuery('')}
+                    title="Clear search"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+
+              <div style={styles.sprintsList}>
+                {sprints.filter((sprint) =>
+                  sprint.name.toLowerCase().includes(sprintSearchQuery.toLowerCase())
+                ).length === 0 ? (
+                  <div style={styles.noSprintsText}>
+                    {sprints.length === 0 ? 'No active or planned sprints available' : 'No sprints match your search'}
+                  </div>
+                ) : (
+                  sprints
+                    .filter((sprint) =>
+                      sprint.name.toLowerCase().includes(sprintSearchQuery.toLowerCase())
+                    )
+                    .map((sprint) => (
+                    <label
+                      key={sprint._id}
+                      style={{
+                        ...styles.sprintRadioLabel,
+                        ...(selectedSprintId === sprint._id ? styles.sprintRadioLabelSelected : {}),
+                      }}
+                      onMouseEnter={(e) => {
+                        if (selectedSprintId !== sprint._id) {
+                          e.currentTarget.style.borderColor = '#879BFF';
+                          e.currentTarget.style.backgroundColor = '#f7fafc';
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (selectedSprintId !== sprint._id) {
+                          e.currentTarget.style.borderColor = '#e2e8f0';
+                          e.currentTarget.style.backgroundColor = 'white';
+                        }
+                      }}
+                    >
+                      <input
+                        type="radio"
+                        name="sprint"
+                        value={sprint._id}
+                        checked={selectedSprintId === sprint._id}
+                        onChange={(e) => setSelectedSprintId(e.target.value)}
+                        style={styles.radioInput}
+                      />
+                      <div style={styles.sprintOptionContent}>
+                        <div style={styles.sprintOptionHeader}>
+                          <span style={styles.sprintOptionName}>{sprint.name}</span>
+                          <span
+                            style={{
+                              ...styles.sprintStatusBadge,
+                              backgroundColor: sprint.status === 'active' ? '#48bb78' : '#4299e1',
+                            }}
+                          >
+                            {sprint.status}
+                          </span>
+                        </div>
+                        <div style={styles.sprintOptionMeta}>
+                          <span style={styles.sprintMetaItem}>
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16" style={{ marginRight: '4px', verticalAlign: 'middle' }}>
+                              <path d="M3.5 0a.5.5 0 0 1 .5.5V1h8V.5a.5.5 0 0 1 1 0V1h1a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2h1V.5a.5.5 0 0 1 .5-.5M1 4v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V4z"/>
+                            </svg>
+                            {new Date(sprint.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - {new Date(sprint.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                          </span>
+                        </div>
+                      </div>
+                    </label>
+                  ))
+                )}
+              </div>
+
+              <div style={styles.addToSprintModalActions}>
+                <button
+                  style={{
+                    ...styles.primaryButton,
+                    ...((!selectedSprintId) ? styles.primaryButtonDisabled : {}),
+                  }}
+                  onClick={handleMoveToSprint}
+                  disabled={!selectedSprintId}
+                >
+                  Add to Sprint
+                </button>
+                <button
+                  style={styles.cancelButton}
+                  onClick={() => {
+                    setShowAddToSprintModal(false);
+                    setBacklogToAddToSprint(null);
+                    setSelectedSprintId('');
+                    setSprintSearchQuery('');
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Success Modal */}
         {showSuccessModal && (
           <div style={styles.successModalOverlay}>
@@ -975,9 +1128,9 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   backlogGridView: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))',
-    columnGap: '32px',
-    rowGap: '60px',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(380px, 1fr))',
+    columnGap: '24px',
+    rowGap: '70px',
   },
   backlogCard: {
     background: 'white',
@@ -988,32 +1141,40 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   backlogCardGrid: {
     background: 'white',
-    padding: '20px',
-    borderRadius: '10px',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-    transition: 'transform 0.2s, box-shadow 0.2s',
+    padding: '24px',
+    borderRadius: '12px',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+    transition: 'all 0.2s ease',
     display: 'flex',
     flexDirection: 'column',
     height: '100%',
-    minHeight: '300px',
+    minHeight: '280px',
+    border: '1px solid #f0f0f0',
   },
   cardHeader: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: '12px',
+    marginBottom: '16px',
+  },
+  cardHeaderContent: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
+    width: '100%',
   },
   cardTitle: {
-    fontSize: '18px',
+    fontSize: '17px',
     fontWeight: '600',
-    color: '#2d3748',
+    color: '#1a202c',
     margin: 0,
-    marginBottom: '4px',
+    lineHeight: '1.4',
   },
   cardProject: {
-    fontSize: '14px',
+    fontSize: '13px',
     color: '#718096',
     margin: 0,
+    fontWeight: '500',
   },
   statusBadge: {
     padding: '6px 14px',
@@ -1023,16 +1184,35 @@ const styles: { [key: string]: React.CSSProperties } = {
     color: 'white',
     textTransform: 'uppercase',
   },
+  sprintNameBadge: {
+    padding: '4px 10px',
+    borderRadius: '8px',
+    fontSize: '11px',
+    fontWeight: '600',
+    backgroundColor: '#879BFF',
+    color: 'white',
+    alignSelf: 'flex-start',
+    marginTop: '2px',
+    maxWidth: '100%',
+    wordBreak: 'break-word',
+    lineHeight: '1.4',
+  },
   description: {
     fontSize: '14px',
     color: '#718096',
     marginBottom: '16px',
-    lineHeight: '1.5',
+    lineHeight: '1.6',
     overflow: 'hidden',
     textOverflow: 'ellipsis',
     display: '-webkit-box',
-    WebkitLineClamp: 3,
+    WebkitLineClamp: 2,
     WebkitBoxOrient: 'vertical',
+  },
+  noDescription: {
+    fontSize: '14px',
+    color: '#a0aec0',
+    marginBottom: '16px',
+    fontStyle: 'italic',
   },
   cardMeta: {
     display: 'flex',
@@ -1067,6 +1247,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   metaItem: {
     display: 'flex',
+    alignItems: 'center',
     gap: '8px',
   },
   cardActions: {
@@ -1083,7 +1264,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     flexWrap: 'wrap',
   },
   actionButton: {
-    padding: '6px 14px',
+    padding: '7px 14px',
     border: '1px solid #667eea',
     background: 'white',
     color: '#667eea',
@@ -1091,9 +1272,13 @@ const styles: { [key: string]: React.CSSProperties } = {
     cursor: 'pointer',
     fontSize: '13px',
     fontWeight: '500',
+    transition: 'all 0.2s',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   actionButtonGrid: {
-    padding: '8px 14px',
+    padding: '9px 14px',
     border: '1px solid #667eea',
     background: 'white',
     color: '#667eea',
@@ -1102,11 +1287,14 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontSize: '13px',
     fontWeight: '500',
     flex: '1',
-    textAlign: 'center',
+    transition: 'all 0.2s',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   sprintSelect: {
-    padding: '6px 14px',
-    border: '2px solid #d3d3d3',
+    padding: '7px 14px',
+    border: '1px solid #879BFF',
     background: 'white',
     color: '#879BFF',
     borderRadius: '6px',
@@ -1115,10 +1303,13 @@ const styles: { [key: string]: React.CSSProperties } = {
     cursor: 'pointer',
     transition: 'all 0.2s',
     outline: 'none',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   sprintSelectGrid: {
-    padding: '8px 14px',
-    border: '2px solid #d3d3d3',
+    padding: '9px 14px',
+    border: '1px solid #879BFF',
     background: 'white',
     color: '#879BFF',
     borderRadius: '6px',
@@ -1128,7 +1319,9 @@ const styles: { [key: string]: React.CSSProperties } = {
     transition: 'all 0.2s',
     outline: 'none',
     flex: '1',
-    textAlign: 'center',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   selectOption: {
     padding: '10px 12px',
@@ -1136,7 +1329,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     lineHeight: '1.5',
   },
   deleteButton: {
-    padding: '6px 14px',
+    padding: '7px 14px',
     border: '1px solid #f56565',
     background: 'white',
     color: '#f56565',
@@ -1144,9 +1337,13 @@ const styles: { [key: string]: React.CSSProperties } = {
     cursor: 'pointer',
     fontSize: '13px',
     fontWeight: '500',
+    transition: 'all 0.2s',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   deleteButtonGrid: {
-    padding: '8px 14px',
+    padding: '9px 14px',
     border: '1px solid #f56565',
     background: 'white',
     color: '#f56565',
@@ -1155,10 +1352,13 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontSize: '13px',
     fontWeight: '500',
     flex: '1',
-    textAlign: 'center',
+    transition: 'all 0.2s',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   removeSprintButton: {
-    padding: '6px 14px',
+    padding: '7px 14px',
     border: '1px solid #879BFF',
     background: 'white',
     color: '#879BFF',
@@ -1166,9 +1366,13 @@ const styles: { [key: string]: React.CSSProperties } = {
     cursor: 'pointer',
     fontSize: '13px',
     fontWeight: '500',
+    transition: 'all 0.2s',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   removeSprintButtonGrid: {
-    padding: '8px 14px',
+    padding: '9px 14px',
     border: '1px solid #879BFF',
     background: 'white',
     color: '#879BFF',
@@ -1177,7 +1381,10 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontSize: '13px',
     fontWeight: '500',
     flex: '1',
-    textAlign: 'center',
+    transition: 'all 0.2s',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   loading: {
     textAlign: 'center',
@@ -1450,5 +1657,148 @@ const styles: { [key: string]: React.CSSProperties } = {
     color: '#4a5568',
     marginBottom: '28px',
     lineHeight: '1.6',
+  },
+  addToSprintModal: {
+    background: 'white',
+    borderRadius: '12px',
+    padding: '32px',
+    width: '90%',
+    maxWidth: '540px',
+    maxHeight: '80vh',
+    overflowY: 'auto',
+  },
+  addToSprintModalTitle: {
+    fontSize: '24px',
+    fontWeight: '600',
+    marginBottom: '8px',
+    color: '#2d3748',
+  },
+  addToSprintModalSubtitle: {
+    fontSize: '14px',
+    color: '#718096',
+    marginBottom: '20px',
+  },
+  sprintSearchContainer: {
+    position: 'relative',
+    marginBottom: '20px',
+  },
+  sprintSearchIcon: {
+    position: 'absolute',
+    left: '12px',
+    top: '50%',
+    transform: 'translateY(-50%)',
+    color: '#a0aec0',
+    pointerEvents: 'none' as const,
+  },
+  sprintSearchInput: {
+    width: '100%',
+    padding: '10px 40px 10px 36px',
+    border: '2px solid #e2e8f0',
+    borderRadius: '8px',
+    fontSize: '14px',
+    outline: 'none',
+    transition: 'border-color 0.2s',
+    fontFamily: 'inherit',
+    boxSizing: 'border-box',
+  },
+  clearSprintSearchButton: {
+    position: 'absolute',
+    right: '12px',
+    top: '50%',
+    transform: 'translateY(-50%)',
+    background: 'transparent',
+    border: 'none',
+    color: '#a0aec0',
+    fontSize: '18px',
+    cursor: 'pointer',
+    padding: '4px 8px',
+    borderRadius: '4px',
+    transition: 'all 0.2s',
+  },
+  sprintsList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '12px',
+    marginBottom: '24px',
+    maxHeight: '400px',
+    overflowY: 'auto',
+    padding: '4px',
+  },
+  sprintRadioLabel: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: '12px',
+    padding: '16px',
+    background: 'white',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+    border: '2px solid #e2e8f0',
+  },
+  sprintRadioLabelSelected: {
+    borderColor: '#879BFF',
+    backgroundColor: '#F0F4FF',
+    boxShadow: '0 2px 8px rgba(135, 155, 255, 0.15)',
+  },
+  radioInput: {
+    width: '18px',
+    height: '18px',
+    cursor: 'pointer',
+    marginTop: '2px',
+    flexShrink: 0,
+    accentColor: '#879BFF',
+  },
+  sprintOptionContent: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+  },
+  sprintOptionHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: '12px',
+  },
+  sprintOptionName: {
+    fontSize: '16px',
+    fontWeight: '600',
+    color: '#2d3748',
+  },
+  sprintStatusBadge: {
+    padding: '4px 10px',
+    borderRadius: '10px',
+    fontSize: '11px',
+    fontWeight: '600',
+    color: 'white',
+    textTransform: 'uppercase',
+  },
+  sprintOptionMeta: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    fontSize: '13px',
+    color: '#718096',
+  },
+  sprintMetaItem: {
+    display: 'flex',
+    alignItems: 'center',
+  },
+  noSprintsText: {
+    textAlign: 'center',
+    padding: '32px',
+    color: '#a0aec0',
+    fontSize: '14px',
+  },
+  addToSprintModalActions: {
+    display: 'flex',
+    gap: '12px',
+    justifyContent: 'flex-end',
+    paddingTop: '16px',
+    borderTop: '1px solid #e2e8f0',
+  },
+  primaryButtonDisabled: {
+    opacity: 0.5,
+    cursor: 'not-allowed',
   },
 };
