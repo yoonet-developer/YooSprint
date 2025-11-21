@@ -557,7 +557,22 @@ export default function SprintsPage() {
             <div style={styles.empty}>No sprints found</div>
           ) : (
             paginatedSprints.map((sprint) => (
-              <div key={sprint._id} style={viewMode === 'grid' ? styles.sprintCardGrid : styles.sprintCard}>
+              <div
+                key={sprint._id}
+                style={viewMode === 'grid' ? styles.sprintCardGrid : styles.sprintCard}
+                onMouseEnter={(e) => {
+                  if (viewMode === 'grid') {
+                    e.currentTarget.style.transform = 'translateY(-4px)';
+                    e.currentTarget.style.boxShadow = '0 8px 16px rgba(0,0,0,0.12)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (viewMode === 'grid') {
+                    e.currentTarget.style.transform = 'translateY(0)';
+                    e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.08)';
+                  }
+                }}
+              >
                 <div style={styles.sprintHeader}>
                   <div style={styles.sprintHeaderLeft}>
                     <h3 style={styles.sprintName}>{sprint.name}</h3>
@@ -576,10 +591,18 @@ export default function SprintsPage() {
                         style={styles.viewBacklogsButton}
                         onClick={() => openBacklogsModal(sprint)}
                       >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16" style={{ marginRight: '6px', verticalAlign: 'middle' }}>
+                          <path d="M16 8s-3-5.5-8-5.5S0 8 0 8s3 5.5 8 5.5S16 8 16 8M1.173 8a13 13 0 0 1 1.66-2.043C4.12 4.668 5.88 3.5 8 3.5s3.879 1.168 5.168 2.457A13 13 0 0 1 14.828 8q-.086.13-.195.288c-.335.48-.83 1.12-1.465 1.755C11.879 11.332 10.119 12.5 8 12.5s-3.879-1.168-5.168-2.457A13 13 0 0 1 1.172 8z"/>
+                          <path d="M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5M4.5 8a3.5 3.5 0 1 1 7 0 3.5 3.5 0 0 1-7 0"/>
+                        </svg>
                         View
                       </button>
                       {currentUser?.role !== 'member' && (
                         <button style={styles.deleteButton} onClick={() => openDeleteModal(sprint)}>
+                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16" style={{ marginRight: '6px', verticalAlign: 'middle' }}>
+                            <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z"/>
+                            <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z"/>
+                          </svg>
                           Delete
                         </button>
                       )}
@@ -587,21 +610,53 @@ export default function SprintsPage() {
                   )}
                 </div>
 
-                {viewMode === 'grid' && sprint.goal && (
-                  <p style={styles.sprintGoal}>{sprint.goal}</p>
+                {viewMode === 'grid' && (
+                  sprint.goal ? (
+                    <p style={styles.sprintGoal}>{sprint.goal}</p>
+                  ) : (
+                    <p style={styles.noGoal}>No goal</p>
+                  )
                 )}
 
-                <div style={viewMode === 'grid' ? styles.sprintInfoGrid : styles.sprintInfo}>
-                  <div style={styles.infoItem}>
-                    <strong>Start Date:</strong> {formatDate(sprint.startDate)}
+                {viewMode === 'list' && (
+                  <div style={styles.sprintInfo}>
+                    <div style={styles.infoItem}>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" style={{ color: '#718096', flexShrink: 0 }}>
+                        <path d="M11 6.5a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5z"/>
+                        <path d="M3.5 0a.5.5 0 0 1 .5.5V1h8V.5a.5.5 0 0 1 1 0V1h1a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2h1V.5a.5.5 0 0 1 .5-.5M1 4v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V4z"/>
+                      </svg>
+                      <span>{formatDate(sprint.startDate)} - {formatDate(sprint.endDate)}</span>
+                    </div>
+                    <div style={styles.infoItem}>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" style={{ color: '#718096', flexShrink: 0 }}>
+                        <path d="M9.5 0a.5.5 0 0 1 .5.5.5.5 0 0 0 .5.5.5.5 0 0 1 .5.5V2a.5.5 0 0 1-.5.5h-5A.5.5 0 0 1 5 2v-.5a.5.5 0 0 1 .5-.5.5.5 0 0 0 .5-.5.5.5 0 0 1 .5-.5z"/>
+                        <path d="M3 2.5a.5.5 0 0 1 .5-.5H4a.5.5 0 0 0 0-1h-.5A1.5 1.5 0 0 0 2 2.5v12A1.5 1.5 0 0 0 3.5 16h9a1.5 1.5 0 0 0 1.5-1.5v-12A1.5 1.5 0 0 0 12.5 1H12a.5.5 0 0 0 0 1h.5a.5.5 0 0 1 .5.5v12a.5.5 0 0 1-.5.5h-9a.5.5 0 0 1-.5-.5z"/>
+                        <path d="M10.854 7.854a.5.5 0 0 0-.708-.708L7.5 9.793 6.354 8.646a.5.5 0 1 0-.708.708l1.5 1.5a.5.5 0 0 0 .708 0z"/>
+                      </svg>
+                      <span>{sprint.backlogItems?.length || 0} items</span>
+                    </div>
                   </div>
-                  <div style={styles.infoItem}>
-                    <strong>End Date:</strong> {formatDate(sprint.endDate)}
+                )}
+
+                {viewMode === 'grid' && (
+                  <div style={styles.sprintInfoGrid}>
+                    <div style={styles.infoItem}>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" style={{ color: '#718096', flexShrink: 0 }}>
+                        <path d="M11 6.5a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5z"/>
+                        <path d="M3.5 0a.5.5 0 0 1 .5.5V1h8V.5a.5.5 0 0 1 1 0V1h1a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2h1V.5a.5.5 0 0 1 .5-.5M1 4v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V4z"/>
+                      </svg>
+                      <span>{formatDate(sprint.startDate)} - {formatDate(sprint.endDate)}</span>
+                    </div>
+                    <div style={styles.infoItem}>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" style={{ color: '#718096', flexShrink: 0 }}>
+                        <path d="M9.5 0a.5.5 0 0 1 .5.5.5.5 0 0 0 .5.5.5.5 0 0 1 .5.5V2a.5.5 0 0 1-.5.5h-5A.5.5 0 0 1 5 2v-.5a.5.5 0 0 1 .5-.5.5.5 0 0 0 .5-.5.5.5 0 0 1 .5-.5z"/>
+                        <path d="M3 2.5a.5.5 0 0 1 .5-.5H4a.5.5 0 0 0 0-1h-.5A1.5 1.5 0 0 0 2 2.5v12A1.5 1.5 0 0 0 3.5 16h9a1.5 1.5 0 0 0 1.5-1.5v-12A1.5 1.5 0 0 0 12.5 1H12a.5.5 0 0 0 0 1h.5a.5.5 0 0 1 .5.5v12a.5.5 0 0 1-.5.5h-9a.5.5 0 0 1-.5-.5z"/>
+                        <path d="M10.854 7.854a.5.5 0 0 0-.708-.708L7.5 9.793 6.354 8.646a.5.5 0 1 0-.708.708l1.5 1.5a.5.5 0 0 0 .708 0z"/>
+                      </svg>
+                      <span>{sprint.backlogItems?.length || 0} items</span>
+                    </div>
                   </div>
-                  <div style={styles.infoItem}>
-                    <strong>Backlog Items:</strong> {sprint.backlogItems?.length || 0}
-                  </div>
-                </div>
+                )}
 
                 {viewMode === 'grid' && (
                   <div style={styles.sprintActionsGrid}>
@@ -609,6 +664,10 @@ export default function SprintsPage() {
                       style={styles.viewBacklogsButtonGrid}
                       onClick={() => openBacklogsModal(sprint)}
                     >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16" style={{ marginRight: '6px', verticalAlign: 'middle' }}>
+                        <path d="M16 8s-3-5.5-8-5.5S0 8 0 8s3 5.5 8 5.5S16 8 16 8M1.173 8a13 13 0 0 1 1.66-2.043C4.12 4.668 5.88 3.5 8 3.5s3.879 1.168 5.168 2.457A13 13 0 0 1 14.828 8q-.086.13-.195.288c-.335.48-.83 1.12-1.465 1.755C11.879 11.332 10.119 12.5 8 12.5s-3.879-1.168-5.168-2.457A13 13 0 0 1 1.172 8z"/>
+                        <path d="M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5M4.5 8a3.5 3.5 0 1 1 7 0 3.5 3.5 0 0 1-7 0"/>
+                      </svg>
                       View
                     </button>
                     {currentUser?.role !== 'member' && (
@@ -616,6 +675,10 @@ export default function SprintsPage() {
                         style={styles.deleteButtonGrid}
                         onClick={() => openDeleteModal(sprint)}
                       >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16" style={{ marginRight: '6px', verticalAlign: 'middle' }}>
+                          <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z"/>
+                          <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z"/>
+                        </svg>
                         Delete
                       </button>
                     )}
@@ -1313,9 +1376,9 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   sprintsGridView: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))',
-    columnGap: '32px',
-    rowGap: '60px',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(380px, 1fr))',
+    columnGap: '24px',
+    rowGap: '70px',
   },
   sprintCard: {
     background: 'white',
@@ -1326,13 +1389,14 @@ const styles: { [key: string]: React.CSSProperties } = {
   sprintCardGrid: {
     background: 'white',
     padding: '24px',
-    borderRadius: '10px',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-    transition: 'transform 0.2s, box-shadow 0.2s',
+    borderRadius: '12px',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+    transition: 'all 0.2s ease',
     display: 'flex',
     flexDirection: 'column',
     height: '100%',
-    minHeight: '300px',
+    minHeight: '280px',
+    border: '1px solid #f0f0f0',
   },
   sprintHeader: {
     display: 'flex',
@@ -1342,34 +1406,46 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   sprintHeaderLeft: {
     display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    flexWrap: 'wrap',
+    flexDirection: 'column',
+    gap: '6px',
+    width: '100%',
   },
   sprintGoal: {
     fontSize: '14px',
     color: '#718096',
     marginBottom: '16px',
-    lineHeight: '1.5',
+    lineHeight: '1.6',
     overflow: 'hidden',
     textOverflow: 'ellipsis',
     display: '-webkit-box',
     WebkitLineClamp: 2,
     WebkitBoxOrient: 'vertical',
   },
+  noGoal: {
+    fontSize: '14px',
+    color: '#a0aec0',
+    marginBottom: '16px',
+    fontStyle: 'italic',
+  },
   sprintName: {
-    fontSize: '22px',
+    fontSize: '17px',
     fontWeight: '600',
-    color: '#2d3748',
+    color: '#1a202c',
     margin: 0,
+    lineHeight: '1.4',
   },
   statusBadge: {
-    padding: '6px 14px',
-    borderRadius: '12px',
-    fontSize: '12px',
+    padding: '4px 10px',
+    borderRadius: '8px',
+    fontSize: '11px',
     fontWeight: '600',
     color: 'white',
     textTransform: 'uppercase',
+    alignSelf: 'flex-start',
+    marginTop: '2px',
+    maxWidth: '100%',
+    wordBreak: 'break-word',
+    lineHeight: '1.4',
   },
   sprintActions: {
     display: 'flex',
@@ -1382,28 +1458,33 @@ const styles: { [key: string]: React.CSSProperties } = {
     width: '100%',
   },
   viewBacklogsButton: {
-    padding: '6px 14px',
-    border: '1px solid #4299e1',
+    padding: '7px 14px',
+    border: '1px solid #879BFF',
     background: 'white',
-    color: '#4299e1',
+    color: '#879BFF',
     borderRadius: '6px',
     cursor: 'pointer',
     fontSize: '13px',
     fontWeight: '500',
     transition: 'all 0.2s',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   viewBacklogsButtonGrid: {
-    padding: '8px 14px',
-    border: '1px solid #4299e1',
+    padding: '9px 14px',
+    border: '1px solid #879BFF',
     background: 'white',
-    color: '#4299e1',
+    color: '#879BFF',
     borderRadius: '6px',
     cursor: 'pointer',
     fontSize: '13px',
     fontWeight: '500',
     transition: 'all 0.2s',
     flex: '1',
-    textAlign: 'center',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   actionButton: {
     padding: '6px 14px',
@@ -1416,7 +1497,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontWeight: '500',
   },
   deleteButton: {
-    padding: '6px 14px',
+    padding: '7px 14px',
     border: '1px solid #f56565',
     background: 'white',
     color: '#f56565',
@@ -1424,9 +1505,13 @@ const styles: { [key: string]: React.CSSProperties } = {
     cursor: 'pointer',
     fontSize: '13px',
     fontWeight: '500',
+    transition: 'all 0.2s',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   deleteButtonGrid: {
-    padding: '8px 14px',
+    padding: '9px 14px',
     border: '1px solid #f56565',
     background: 'white',
     color: '#f56565',
@@ -1435,7 +1520,10 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontSize: '13px',
     fontWeight: '500',
     flex: '1',
-    textAlign: 'center',
+    transition: 'all 0.2s',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   sprintInfo: {
     display: 'flex',
@@ -1451,11 +1539,10 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontSize: '14px',
     color: '#4a5568',
     marginBottom: '16px',
-    paddingBottom: '16px',
-    borderBottom: '1px solid #e2e8f0',
   },
   infoItem: {
     display: 'flex',
+    alignItems: 'center',
     gap: '8px',
   },
   backlogItemsSection: {

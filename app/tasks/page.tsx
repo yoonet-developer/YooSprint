@@ -40,6 +40,8 @@ function TasksPageContent() {
   const [currentPage, setCurrentPage] = useState(1);
   const [highlightedTaskId, setHighlightedTaskId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [successMessage, setSuccessMessage] = useState('');
   const taskRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
 
   // Dynamic items per page: 4 for list view, 8 for grid view (2 rows x 4 columns)
@@ -179,15 +181,23 @@ function TasksPageContent() {
   };
 
   // Pagination calculations
-  const totalPages = Math.ceil(filteredTasks.length / itemsPerPage);
+  const totalPages = Math.ceil(filteredTasks.length / itemsPerPage) || 1;
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = startIndex + itemsPerPage;
   const paginatedTasks = filteredTasks.slice(startIndex, endIndex);
-  const showPagination = filteredTasks.length > itemsPerPage; // Only show pagination when more than 4 items
+  const showPagination = true; // Always show pagination
 
   const goToPage = (page: number) => {
     setCurrentPage(page);
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const showSuccess = (message: string) => {
+    setSuccessMessage(message);
+    setShowSuccessModal(true);
+    setTimeout(() => {
+      setShowSuccessModal(false);
+    }, 3000);
   };
 
   const updateTaskStatus = async (taskId: string, newStatus: 'pending' | 'in-progress' | 'completed') => {
@@ -205,6 +215,8 @@ function TasksPageContent() {
       const data = await response.json();
       if (data.success) {
         fetchMyTasks();
+        const statusLabel = newStatus === 'pending' ? 'To Do' : newStatus === 'in-progress' ? 'In Progress' : 'Completed';
+        showSuccess(`Task status updated to ${statusLabel}!`);
       } else {
         alert(data.message || 'Error updating task status');
       }
@@ -393,20 +405,33 @@ function TasksPageContent() {
                 ref={(el) => { taskRefs.current[task._id] = el; }}
                 style={{
                   ...(viewMode === 'grid' ? styles.taskCardGrid : styles.taskCard),
+                  borderLeft: `4px solid ${getPriorityColor(task.priority)}`,
                   ...(highlightedTaskId === task._id ? styles.highlightedCard : {}),
+                }}
+                onMouseEnter={(e) => {
+                  if (viewMode === 'grid') {
+                    e.currentTarget.style.transform = 'translateY(-4px)';
+                    e.currentTarget.style.boxShadow = '0 8px 16px rgba(0,0,0,0.12)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (viewMode === 'grid') {
+                    e.currentTarget.style.transform = 'translateY(0)';
+                    e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.08)';
+                  }
                 }}
               >
                 <div style={styles.cardHeader}>
-                  <h3 style={styles.cardTitle}>{task.title}</h3>
-                  <div style={styles.badges}>
-                    <span
-                      style={{
-                        ...styles.priorityBadge,
-                        backgroundColor: getPriorityColor(task.priority),
-                      }}
-                    >
-                      {task.priority}
-                    </span>
+                  <div style={styles.cardHeaderContent}>
+                    <h3 style={styles.cardTitle}>{task.title}</h3>
+                    <p style={styles.cardProject}>{task.project}</p>
+                    {task.sprint && (
+                      <span style={styles.sprintNameBadge}>
+                        {task.sprint.name}
+                      </span>
+                    )}
+                  </div>
+                  {viewMode === 'list' && (
                     <span
                       style={{
                         ...styles.statusBadge,
@@ -416,45 +441,73 @@ function TasksPageContent() {
                     >
                       {task.taskStatus.replace('-', ' ')}
                     </span>
-                  </div>
+                  )}
                 </div>
 
-                {task.description && (
+                {task.description ? (
                   <p style={styles.description}>{task.description}</p>
+                ) : (
+                  viewMode === 'grid' && (
+                    <p style={styles.noDescription}>No description</p>
+                  )
                 )}
 
-                <div style={styles.cardMeta}>
-                  <div style={styles.metaItem}>
-                    <strong>Project:</strong> {task.project}
+                <div style={viewMode === 'grid' ? styles.cardMetaGrid : styles.cardMeta}>
+                  <div style={viewMode === 'grid' ? styles.metaLeftGrid : styles.metaLeft}>
+                    {viewMode === 'grid' && (
+                      <div style={styles.metaItem}>
+                        <span
+                          style={{
+                            ...styles.statusBadge,
+                            backgroundColor: getStatusColor(task.taskStatus),
+                            color: getStatusTextColor(task.taskStatus),
+                          }}
+                        >
+                          {task.taskStatus.replace('-', ' ')}
+                        </span>
+                      </div>
+                    )}
+                    {task.sprint && task.sprint.endDate && (
+                      <div style={styles.metaItem}>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" style={{ color: '#718096', flexShrink: 0 }}>
+                          <path d="M11 6.5a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5z"/>
+                          <path d="M3.5 0a.5.5 0 0 1 .5.5V1h8V.5a.5.5 0 0 1 1 0V1h1a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2h1V.5a.5.5 0 0 1 .5-.5M1 4v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V4z"/>
+                        </svg>
+                        <span>Sprint end: {formatDate(task.sprint.endDate)}</span>
+                      </div>
+                    )}
                   </div>
-                  {task.sprint && (
-                    <div style={styles.metaItem}>
-                      <strong>Sprint:</strong> {task.sprint.name}
+                  <div style={viewMode === 'grid' ? styles.cardActionsGrid : styles.cardActions}>
+                    <div style={styles.statusUpdateContainer}>
+                      <label style={styles.statusUpdateLabel}>
+                        Update Status:
+                      </label>
+                      <select
+                        style={viewMode === 'grid' ? styles.statusSelectGrid : styles.statusSelect}
+                        value={task.taskStatus}
+                        onChange={(e) => updateTaskStatus(task._id, e.target.value as any)}
+                      >
+                        <option value="pending">To Do</option>
+                        <option value="in-progress">In Progress</option>
+                        <option value="completed">Completed</option>
+                      </select>
                     </div>
-                  )}
-                  {task.sprint && task.sprint.endDate && (
-                    <div style={styles.metaItem}>
-                      <strong>Sprint End:</strong> {formatDate(task.sprint.endDate)}
-                    </div>
-                  )}
-                </div>
-
-                <div style={styles.cardActions}>
-                  <label style={styles.statusLabel}>Update Status:</label>
-                  <select
-                    style={styles.statusSelect}
-                    value={task.taskStatus}
-                    onChange={(e) => updateTaskStatus(task._id, e.target.value as any)}
-                  >
-                    <option value="pending">To Do</option>
-                    <option value="in-progress">In Progress</option>
-                    <option value="completed">Completed</option>
-                  </select>
+                  </div>
                 </div>
               </div>
             ))
           )}
         </div>
+
+        {/* Success Modal */}
+        {showSuccessModal && (
+          <div style={styles.successModalOverlay}>
+            <div style={styles.successModal}>
+              <div style={styles.successIcon}>✓</div>
+              <p style={styles.successMessage}>{successMessage}</p>
+            </div>
+          </div>
+        )}
       </div>
     </AppLayout>
   );
@@ -578,17 +631,13 @@ const styles: { [key: string]: React.CSSProperties } = {
   tasksGrid: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '20px',
-    maxHeight: 'calc(100vh - 350px)',
-    overflowY: 'auto',
-    paddingRight: '8px',
+    gap: '16px',
   },
   tasksGridView: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))',
-    columnGap: '32px',
-    rowGap: '60px',
-    paddingRight: '8px',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(380px, 1fr))',
+    columnGap: '24px',
+    rowGap: '70px',
   },
   taskCard: {
     background: 'white',
@@ -600,13 +649,14 @@ const styles: { [key: string]: React.CSSProperties } = {
   taskCardGrid: {
     background: 'white',
     padding: '24px',
-    borderRadius: '10px',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-    transition: 'transform 0.2s, box-shadow 0.2s',
+    borderRadius: '12px',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+    transition: 'all 0.2s ease',
     display: 'flex',
     flexDirection: 'column',
-    minHeight: '320px',
     height: '100%',
+    minHeight: '280px',
+    border: '1px solid #f0f0f0',
   },
   cardHeader: {
     display: 'flex',
@@ -615,27 +665,37 @@ const styles: { [key: string]: React.CSSProperties } = {
     marginBottom: '16px',
     gap: '12px',
   },
-  cardTitle: {
-    fontSize: '18px',
-    fontWeight: '600',
-    color: '#2d3748',
-    margin: 0,
-    flex: 1,
-    wordBreak: 'break-word',
-  },
-  badges: {
+  cardHeaderContent: {
     display: 'flex',
     flexDirection: 'column',
     gap: '6px',
+    width: '100%',
   },
-  priorityBadge: {
+  cardTitle: {
+    fontSize: '17px',
+    fontWeight: '600',
+    color: '#1a202c',
+    margin: 0,
+    lineHeight: '1.4',
+  },
+  cardProject: {
+    fontSize: '13px',
+    color: '#718096',
+    margin: 0,
+    fontWeight: '500',
+  },
+  sprintNameBadge: {
     padding: '4px 10px',
-    borderRadius: '10px',
+    borderRadius: '8px',
     fontSize: '11px',
     fontWeight: '600',
+    backgroundColor: '#879BFF',
     color: 'white',
-    textTransform: 'uppercase',
-    textAlign: 'center',
+    alignSelf: 'flex-start',
+    marginTop: '2px',
+    maxWidth: '100%',
+    wordBreak: 'break-word',
+    lineHeight: '1.4',
   },
   statusBadge: {
     padding: '4px 10px',
@@ -645,54 +705,126 @@ const styles: { [key: string]: React.CSSProperties } = {
     color: 'white',
     textTransform: 'uppercase',
     textAlign: 'center',
+    alignSelf: 'flex-start',
+    flexShrink: 0,
   },
   description: {
     fontSize: '14px',
     color: '#718096',
     marginBottom: '16px',
-    marginTop: '0',
-    lineHeight: '1.5',
+    lineHeight: '1.6',
     overflow: 'hidden',
     textOverflow: 'ellipsis',
     display: '-webkit-box',
-    WebkitLineClamp: 3,
+    WebkitLineClamp: 2,
     WebkitBoxOrient: 'vertical',
+  },
+  noDescription: {
+    fontSize: '14px',
+    color: '#a0aec0',
+    marginBottom: '16px',
+    fontStyle: 'italic',
   },
   cardMeta: {
     display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    borderTop: '1px solid #e2e8f0',
+    paddingTop: '16px',
+    gap: '16px',
+  },
+  cardMetaGrid: {
+    display: 'flex',
     flexDirection: 'column',
-    gap: '8px',
-    marginBottom: '16px',
+    gap: '12px',
+    marginTop: 'auto',
+    paddingTop: '16px',
+  },
+  metaLeft: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
     fontSize: '14px',
     color: '#4a5568',
-    flex: 1,
+  },
+  metaLeftGrid: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
+    fontSize: '14px',
+    color: '#4a5568',
+    paddingBottom: '12px',
+    borderBottom: '1px solid #e2e8f0',
   },
   metaItem: {
     display: 'flex',
+    alignItems: 'center',
     gap: '8px',
   },
   cardActions: {
     display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+    alignItems: 'stretch',
+  },
+  cardActionsGrid: {
+    display: 'flex',
+    flexDirection: 'row',
+    gap: '8px',
+    width: '100%',
+    flexWrap: 'wrap',
+  },
+  statusUpdateContainer: {
+    display: 'flex',
+    flexDirection: 'row',
     alignItems: 'center',
     gap: '12px',
-    borderTop: '1px solid #e2e8f0',
-    paddingTop: '16px',
-    marginTop: 'auto',
+    width: '100%',
   },
-  statusLabel: {
-    fontSize: '14px',
-    fontWeight: '500',
+  statusUpdateLabel: {
+    fontSize: '13px',
+    fontWeight: '600',
     color: '#4a5568',
+    display: 'flex',
+    alignItems: 'center',
+    whiteSpace: 'nowrap',
+    flexShrink: 0,
   },
   statusSelect: {
-    flex: 1,
-    padding: '8px 12px',
-    border: '1px solid #e2e8f0',
-    borderRadius: '6px',
-    fontSize: '14px',
-    cursor: 'pointer',
+    padding: '10px 14px',
+    border: '2px solid #e2e8f0',
     background: 'white',
+    color: '#2d3748',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    fontSize: '14px',
+    fontWeight: '500',
+    transition: 'all 0.2s',
     outline: 'none',
+    flex: '1',
+    appearance: 'none',
+    backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'12\' height=\'12\' viewBox=\'0 0 12 12\'%3E%3Cpath fill=\'%234a5568\' d=\'M10.293 3.293L6 7.586 1.707 3.293A1 1 0 00.293 4.707l5 5a1 1 0 001.414 0l5-5a1 1 0 10-1.414-1.414z\'/%3E%3C/svg%3E")',
+    backgroundRepeat: 'no-repeat',
+    backgroundPosition: 'right 12px center',
+    paddingRight: '36px',
+  },
+  statusSelectGrid: {
+    padding: '10px 14px',
+    border: '2px solid #e2e8f0',
+    background: 'white',
+    color: '#2d3748',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    fontSize: '14px',
+    fontWeight: '500',
+    flex: '1',
+    transition: 'all 0.2s',
+    outline: 'none',
+    appearance: 'none',
+    backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'12\' height=\'12\' viewBox=\'0 0 12 12\'%3E%3Cpath fill=\'%234a5568\' d=\'M10.293 3.293L6 7.586 1.707 3.293A1 1 0 00.293 4.707l5 5a1 1 0 001.414 0l5-5a1 1 0 10-1.414-1.414z\'/%3E%3C/svg%3E")',
+    backgroundRepeat: 'no-repeat',
+    backgroundPosition: 'right 12px center',
+    paddingRight: '36px',
   },
   loading: {
     textAlign: 'center',
@@ -740,6 +872,48 @@ const styles: { [key: string]: React.CSSProperties } = {
     border: '2px solid #FF6495',
     boxShadow: '0 0 0 4px rgba(255, 100, 149, 0.2), 0 4px 12px rgba(0,0,0,0.15)',
     animation: 'pulse 2s ease-in-out',
+  },
+  successModalOverlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    display: 'flex',
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+    zIndex: 2000,
+    paddingTop: '100px',
+    pointerEvents: 'none',
+  },
+  successModal: {
+    background: 'linear-gradient(135deg, #48bb78 0%, #38a169 100%)',
+    color: 'white',
+    padding: '24px 32px',
+    borderRadius: '12px',
+    boxShadow: '0 10px 40px rgba(72, 187, 120, 0.4)',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '16px',
+    animation: 'slideDown 0.3s ease-out',
+    pointerEvents: 'auto',
+  },
+  successIcon: {
+    fontSize: '32px',
+    fontWeight: 'bold',
+    background: 'white',
+    color: '#48bb78',
+    width: '48px',
+    height: '48px',
+    borderRadius: '50%',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  successMessage: {
+    fontSize: '16px',
+    fontWeight: '600',
+    margin: 0,
   },
 };
 
