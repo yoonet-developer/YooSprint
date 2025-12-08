@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { requireAuth, errorResponse, successResponse } from '@/lib/utils/apiHelpers';
 import User from '@/lib/models/User';
+import { logAudit, getChanges } from '@/lib/utils/auditLogger';
 
 export async function GET(
   request: NextRequest,
@@ -57,6 +58,16 @@ export async function PUT(
       return errorResponse('Not authorized to update this user', 403);
     }
 
+    // Capture old values for audit
+    const oldData = {
+      username: existingUser.username,
+      name: existingUser.name,
+      position: existingUser.position,
+      department: existingUser.department,
+      role: existingUser.role,
+      isActive: existingUser.isActive
+    };
+
     const passwordChanged = body.password !== undefined && body.password.trim() !== '';
 
     // Update user fields
@@ -74,6 +85,40 @@ export async function PUT(
 
     // Save the user (this triggers the pre-save hook for password hashing)
     await existingUser.save();
+
+    // Capture new values for audit
+    const newData = {
+      username: existingUser.username,
+      name: existingUser.name,
+      position: existingUser.position,
+      department: existingUser.department,
+      role: existingUser.role,
+      isActive: existingUser.isActive
+    };
+
+    // Determine the specific action for better audit trail
+    let action = 'user_updated';
+    let details = `Updated user: ${existingUser.username}`;
+
+    if (passwordChanged) {
+      action = 'user_password_changed';
+      details = `Changed password for user: ${existingUser.username}`;
+    } else if (oldData.isActive !== newData.isActive) {
+      action = newData.isActive ? 'user_activated' : 'user_deactivated';
+      details = `${newData.isActive ? 'Activated' : 'Deactivated'} user: ${existingUser.username}`;
+    }
+
+    // Log audit
+    await logAudit({
+      user: currentUser,
+      action,
+      resourceType: 'user',
+      resourceId: existingUser._id.toString(),
+      resourceName: existingUser.name,
+      details,
+      changes: getChanges(oldData, newData),
+      request
+    });
 
     // Return user without password
     const user = await User.findById(id).select('-password');
@@ -114,6 +159,17 @@ export async function DELETE(
     if (!isSuperAdmin && !(isAdminOrManager && isSameDepartment)) {
       return errorResponse('Not authorized to delete this user', 403);
     }
+
+    // Log audit before deletion
+    await logAudit({
+      user: currentUser,
+      action: 'user_deleted',
+      resourceType: 'user',
+      resourceId: existingUser._id.toString(),
+      resourceName: existingUser.name,
+      details: `Deleted user: ${existingUser.username} (${existingUser.role})`,
+      request
+    });
 
     const user = await User.findByIdAndDelete(id);
 

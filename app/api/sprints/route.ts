@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { requireAuth, errorResponse, successResponse, getDepartmentFilter } from '@/lib/utils/apiHelpers';
 import Sprint from '@/lib/models/Sprint';
 import Backlog from '@/lib/models/Backlog';
+import { logAudit } from '@/lib/utils/auditLogger';
 
 export async function GET(request: NextRequest) {
   try {
@@ -90,6 +91,17 @@ export async function POST(request: NextRequest) {
       ...body,
       department,
       createdBy: user._id,
+    });
+
+    // Log audit
+    await logAudit({
+      user,
+      action: 'sprint_created',
+      resourceType: 'sprint',
+      resourceId: sprint._id.toString(),
+      resourceName: sprint.name,
+      details: `Created new sprint: ${sprint.name} (${sprint.status})`,
+      request
     });
 
     const populatedSprint = await Sprint.findById(sprint._id).populate('backlogItems');
