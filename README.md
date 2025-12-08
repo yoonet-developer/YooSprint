@@ -25,29 +25,25 @@ project-management-nextjs/
 │   │   ├── tasks/           # Task management endpoints
 │   │   ├── users/           # User management endpoints
 │   │   ├── backlogs/        # Backlog endpoints
-│   │   ├── sprints/         # Sprint endpoints
-│   │   └── audit-logs/      # Audit logging endpoints
+│   │   └── sprints/         # Sprint endpoints
 │   ├── login/               # Login page
 │   ├── dashboard/           # Main dashboard
 │   ├── tasks/               # Tasks page
 │   ├── backlogs/            # Backlogs page
 │   ├── sprints/             # Sprints page
 │   ├── team/                # Team management page
-│   ├── audit-logs/          # Audit logs page
 │   └── layout.tsx           # Root layout
 ├── lib/                     # Shared utilities
 │   ├── models/              # Mongoose models
 │   │   ├── User.ts          # User model with roles
 │   │   ├── Task.ts          # Task model
 │   │   ├── Backlog.ts       # Backlog model
-│   │   ├── Sprint.ts        # Sprint model
-│   │   └── AuditLog.ts      # Audit log model
+│   │   └── Sprint.ts        # Sprint model
 │   ├── middleware/          # Authentication middleware
 │   │   └── auth.ts          # JWT verification
 │   ├── db.ts                # Database connection
 │   └── utils/               # Utility functions
-│       ├── apiHelpers.ts    # API helper functions & role-based filtering
-│       └── auditLogger.ts   # Audit logging utility
+│       └── apiHelpers.ts    # API helper functions & role-based filtering
 ├── components/              # React components
 │   ├── auth/                # Authentication components
 │   ├── dashboard/           # Dashboard components

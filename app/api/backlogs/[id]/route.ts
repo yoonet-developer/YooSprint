@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { requireAuth, errorResponse, successResponse, checkAndUpdateSprintStatus } from '@/lib/utils/apiHelpers';
 import Backlog from '@/lib/models/Backlog';
-import { logAudit, getChanges } from '@/lib/utils/auditLogger';
+import { onTaskCompleted, checkSprintFinisher } from '@/lib/utils/achievementService';
 
 export async function GET(
   request: NextRequest,
@@ -51,15 +51,6 @@ export async function PUT(
       return errorResponse('Not authorized to update this backlog', 403);
     }
 
-    // Capture old values for audit
-    const oldData = {
-      title: existingBacklog.title,
-      priority: existingBacklog.priority,
-      taskStatus: existingBacklog.taskStatus,
-      status: existingBacklog.status,
-      storyPoints: existingBacklog.storyPoints
-    };
-
     // Update the backlog
     const updatedBacklog = await Backlog.findByIdAndUpdate(
       id,
@@ -71,35 +62,19 @@ export async function PUT(
       return errorResponse('Backlog not found', 404);
     }
 
-    // Capture new values for audit
-    const newData = {
-      title: updatedBacklog.title,
-      priority: updatedBacklog.priority,
-      taskStatus: updatedBacklog.taskStatus,
-      status: updatedBacklog.status,
-      storyPoints: updatedBacklog.storyPoints
-    };
+    // Check if task was just completed - track achievements
+    if (body.taskStatus === 'completed' && existingBacklog.taskStatus !== 'completed') {
+      const assigneeId = updatedBacklog.assignee?.toString() || user._id.toString();
+      const sprintId = updatedBacklog.sprint?.toString() || null;
 
-    // Determine specific action for better audit trail
-    let action = 'backlog_updated';
-    let details = `Updated backlog: ${updatedBacklog.title}`;
+      // Track task completion for achievements
+      await onTaskCompleted(assigneeId, id, sprintId, existingBacklog.startedAt);
 
-    if (oldData.taskStatus !== newData.taskStatus) {
-      action = 'backlog_status_changed';
-      details = `Changed backlog status from ${oldData.taskStatus} to ${newData.taskStatus}: ${updatedBacklog.title}`;
+      // Check if user completed all tasks in sprint
+      if (sprintId) {
+        await checkSprintFinisher(assigneeId, sprintId);
+      }
     }
-
-    // Log audit
-    await logAudit({
-      user,
-      action,
-      resourceType: 'backlog',
-      resourceId: updatedBacklog._id.toString(),
-      resourceName: updatedBacklog.title,
-      details,
-      changes: getChanges(oldData, newData),
-      request
-    });
 
     // Check if this backlog is part of a sprint and if taskStatus was updated
     if (updatedBacklog.sprint && body.taskStatus) {
@@ -139,17 +114,6 @@ export async function DELETE(
     if (user.role !== 'super-admin' && user.department && existingBacklog.department !== user.department) {
       return errorResponse('Not authorized to delete this backlog', 403);
     }
-
-    // Log audit before deletion
-    await logAudit({
-      user,
-      action: 'backlog_deleted',
-      resourceType: 'backlog',
-      resourceId: existingBacklog._id.toString(),
-      resourceName: existingBacklog.title,
-      details: `Deleted backlog: ${existingBacklog.title} (${existingBacklog.priority} priority)`,
-      request
-    });
 
     const backlog = await Backlog.findByIdAndDelete(id);
 

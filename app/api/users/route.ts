@@ -1,7 +1,6 @@
 import { NextRequest } from 'next/server';
 import { requireAuth, errorResponse, successResponse, getDepartmentFilter } from '@/lib/utils/apiHelpers';
 import User from '@/lib/models/User';
-import { logAudit } from '@/lib/utils/auditLogger';
 
 export async function GET(request: NextRequest) {
   try {
@@ -70,17 +69,6 @@ export async function POST(request: NextRequest) {
       password, // Will be hashed by model pre-save hook
       role: role || 'member',
       isActive: true,
-    });
-
-    // Log audit
-    await logAudit({
-      user: authUser,
-      action: 'user_created',
-      resourceType: 'user',
-      resourceId: user._id.toString(),
-      resourceName: user.name,
-      details: `Created new user: ${user.username} with role ${user.role}`,
-      request
     });
 
     // Return user without password

@@ -8,17 +8,12 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const user = await requireAuth(request);
+    await requireAuth(request);
     const { id } = await params;
-    const task = await Task.findById(id).populate('assignee', 'name email department');
+    const task = await Task.findById(id).populate('assignee', 'name email');
 
     if (!task) {
       return errorResponse('Task not found', 404);
-    }
-
-    // Check department access (only super-admin can see all)
-    if (user.role !== 'super-admin' && user.department && task.department !== user.department) {
-      return errorResponse('Not authorized to access this task', 403);
     }
 
     return successResponse({ task });
@@ -37,25 +32,15 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const user = await requireAuth(request);
+    await requireAuth(request);
     const { id } = await params;
     const body = await request.json();
-
-    // Check department access before updating
-    const existingTask = await Task.findById(id);
-    if (!existingTask) {
-      return errorResponse('Task not found', 404);
-    }
-
-    if (user.role !== 'super-admin' && user.department && existingTask.department !== user.department) {
-      return errorResponse('Not authorized to update this task', 403);
-    }
 
     const task = await Task.findByIdAndUpdate(
       id,
       body,
       { new: true, runValidators: true }
-    ).populate('assignee', 'name email department');
+    ).populate('assignee', 'name email');
 
     if (!task) {
       return errorResponse('Task not found', 404);
@@ -77,18 +62,8 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const user = await requireAuth(request);
+    await requireAuth(request);
     const { id } = await params;
-
-    // Check department access before deleting
-    const existingTask = await Task.findById(id);
-    if (!existingTask) {
-      return errorResponse('Task not found', 404);
-    }
-
-    if (user.role !== 'super-admin' && user.department && existingTask.department !== user.department) {
-      return errorResponse('Not authorized to delete this task', 403);
-    }
 
     const task = await Task.findByIdAndDelete(id);
 
