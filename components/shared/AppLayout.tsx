@@ -219,20 +219,6 @@ export default function AppLayout({ children }: AppLayoutProps) {
             </li>
           )}
 
-          {/* Audit Trail for Admin/Super-Admin only */}
-          {(user.role === 'admin' || user.role === 'super-admin') && (
-            <li style={styles.navItem}>
-              <Link
-                href="/audit-trail"
-                style={{
-                  ...styles.navLink,
-                  ...(pathname === '/audit-trail' ? styles.navLinkActive : {}),
-                }}
-              >
-                Audit Trail
-              </Link>
-            </li>
-          )}
         </ul>
       </nav>
 
