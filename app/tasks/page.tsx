@@ -672,11 +672,11 @@ const styles: { [key: string]: React.CSSProperties } = {
     width: '100%',
   },
   cardTitle: {
-    fontSize: '17px',
+    fontSize: '18px',
     fontWeight: '600',
-    color: '#1a202c',
+    color: '#2d3748',
     margin: 0,
-    lineHeight: '1.4',
+    marginBottom: '4px',
   },
   cardProject: {
     fontSize: '13px',

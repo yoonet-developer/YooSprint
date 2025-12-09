@@ -1,7 +1,6 @@
 import { NextRequest } from 'next/server';
 import { requireAuth, errorResponse, successResponse, getDepartmentFilter } from '@/lib/utils/apiHelpers';
 import Backlog from '@/lib/models/Backlog';
-import { logAudit } from '@/lib/utils/auditLogger';
 
 export async function GET(request: NextRequest) {
   try {
@@ -50,17 +49,6 @@ export async function POST(request: NextRequest) {
       ...body,
       department,
       createdBy: user._id,
-    });
-
-    // Log audit
-    await logAudit({
-      user,
-      action: 'backlog_created',
-      resourceType: 'backlog',
-      resourceId: backlog._id.toString(),
-      resourceName: backlog.title,
-      details: `Created new backlog: ${backlog.title} (${backlog.priority} priority)`,
-      request
     });
 
     const populatedBacklog = await Backlog.findById(backlog._id)
