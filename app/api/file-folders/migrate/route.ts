@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import mongoose from 'mongoose';
+import mongoose, { Connection } from 'mongoose';
 import dbConnect from '@/lib/db';
 import FileFolder from '@/lib/models/FileFolder';
 
@@ -8,7 +8,7 @@ const DOCSMANAGER_URI = process.env.MONGODB_URI?.replace('/projectmanagement', '
 
 // POST - Migrate data from docsmanager to projectmanagement
 export async function POST() {
-  let docsManagerConnection: typeof mongoose | null = null;
+  let docsManagerConnection: Connection | null = null;
 
   try {
     // Connect to the main database first
@@ -112,7 +112,7 @@ export async function POST() {
 
 // GET - Check migration status / preview data
 export async function GET() {
-  let docsManagerConnection: typeof mongoose | null = null;
+  let docsManagerConnection: Connection | null = null;
 
   try {
     // Create a connection to the docsmanager database
