@@ -151,6 +151,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
     { label: 'Backlogs', href: '/backlogs' },
     { label: 'Sprints', href: '/sprints' },
     { label: 'My Tasks', href: '/tasks' },
+    { label: 'File Management', href: '/files' },
   ];
 
   const adminManagerItems = [
