@@ -53,7 +53,6 @@ export default function AppLayout({ children }: AppLayoutProps) {
 
     checkAuth();
 
-    // Session timeout
     import('@/lib/utils/sessionTimeout').then(({ initializeInactivityMonitoring }) => {
       const cleanup = initializeInactivityMonitoring(() => {
         alert('Your session has expired due to inactivity. Please log in again.');
@@ -137,7 +136,10 @@ export default function AppLayout({ children }: AppLayoutProps) {
   if (loading) {
     return (
       <div style={styles.loadingContainer}>
-        <div style={styles.loader}>Loading...</div>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
+          <div style={styles.spinner} />
+          <span style={styles.loader}>Loading...</span>
+        </div>
       </div>
     );
   }
@@ -155,6 +157,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
   ];
 
   const adminManagerItems = [
+    { label: 'Board', href: '/board' },
     { label: 'Team', href: '/team' },
   ];
 
@@ -173,7 +176,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
             onClick={() => setShowUserDropdown(!showUserDropdown)}
           >
             <span style={styles.userName}>{user.name}</span>
-            <span style={styles.dropdownArrow}>▼</span>
+            <span style={{...styles.dropdownArrow, transform: showUserDropdown ? 'rotate(180deg)' : 'rotate(0deg)'}}>▼</span>
           </div>
           {showUserDropdown && (
             <div style={styles.userDropdown}>
@@ -201,11 +204,11 @@ export default function AppLayout({ children }: AppLayoutProps) {
                 }}
               >
                 {item.label}
+                {pathname === item.href && <div style={styles.activeIndicator} />}
               </Link>
             </li>
           ))}
 
-          {/* Timeline for Admin/Manager */}
           {(user.role === 'admin' || user.role === 'super-admin' || user.role === 'manager') && (
             <li style={styles.navItem}>
               <Link
@@ -216,10 +219,10 @@ export default function AppLayout({ children }: AppLayoutProps) {
                 }}
               >
                 Timeline
+                {pathname === '/timeline' && <div style={styles.activeIndicator} />}
               </Link>
             </li>
           )}
-
         </ul>
       </nav>
 
@@ -232,9 +235,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
           <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
             <div style={styles.modalHeader}>
               <h2 style={styles.modalTitle}>Change Password</h2>
-              <button style={styles.closeButton} onClick={closePasswordModal}>
-                ×
-              </button>
+              <button style={styles.closeButton} onClick={closePasswordModal}>×</button>
             </div>
 
             <form onSubmit={handlePasswordSubmit} style={styles.form}>
@@ -248,9 +249,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
                   type="password"
                   style={styles.input}
                   value={passwordForm.currentPassword}
-                  onChange={(e) =>
-                    setPasswordForm({ ...passwordForm, currentPassword: e.target.value })
-                  }
+                  onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })}
                   required
                   disabled={passwordLoading}
                 />
@@ -262,9 +261,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
                   type="password"
                   style={styles.input}
                   value={passwordForm.newPassword}
-                  onChange={(e) =>
-                    setPasswordForm({ ...passwordForm, newPassword: e.target.value })
-                  }
+                  onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
                   required
                   minLength={6}
                   disabled={passwordLoading}
@@ -278,9 +275,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
                   type="password"
                   style={styles.input}
                   value={passwordForm.confirmPassword}
-                  onChange={(e) =>
-                    setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })
-                  }
+                  onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
                   required
                   disabled={passwordLoading}
                 />
@@ -296,7 +291,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
                   }}
                   disabled={passwordLoading}
                 >
-                  {passwordLoading ? 'Changing Password...' : 'Change Password'}
+                  {passwordLoading ? 'Changing...' : 'Change Password'}
                 </button>
                 <button
                   type="button"
@@ -328,25 +323,37 @@ const styles: { [key: string]: React.CSSProperties } = {
     alignItems: 'center',
     justifyContent: 'center',
     height: '100vh',
+    background: 'linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%)',
+  },
+  spinner: {
+    width: 40,
+    height: 40,
+    border: '3px solid #879BFF20',
+    borderTop: '3px solid #879BFF',
+    borderRadius: '50%',
+    animation: 'spin 1s linear infinite',
   },
   loader: {
-    fontSize: '20px',
+    fontSize: '18px',
     color: '#879BFF',
+    fontWeight: 500,
   },
   header: {
     gridColumn: '1 / -1',
-    background: '#879BFF',
+    background: 'linear-gradient(135deg, #879BFF 0%, #a78bfa 100%)',
     color: 'white',
     padding: '20px 30px',
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
+    boxShadow: '0 4px 20px rgba(135, 155, 255, 0.3)',
     position: 'relative',
   },
   headerTitle: {
     margin: 0,
-    fontSize: '24px',
+    fontSize: '26px',
+    fontWeight: 700,
+    letterSpacing: '-0.5px',
   },
   userInfoContainer: {
     position: 'relative',
@@ -356,15 +363,19 @@ const styles: { [key: string]: React.CSSProperties } = {
     alignItems: 'center',
     gap: '10px',
     cursor: 'pointer',
-    padding: '8px 16px',
-    borderRadius: '5px',
+    padding: '10px 18px',
+    borderRadius: '10px',
     transition: 'background 0.3s',
+    background: 'rgba(255,255,255,0.1)',
   },
   userName: {
-    fontSize: '16px',
+    fontSize: '15px',
+    fontWeight: 500,
   },
   dropdownArrow: {
-    fontSize: '12px',
+    fontSize: '10px',
+    display: 'inline-block',
+    transition: 'transform 0.2s',
   },
   userDropdown: {
     position: 'absolute',
@@ -372,26 +383,31 @@ const styles: { [key: string]: React.CSSProperties } = {
     right: 0,
     marginTop: '10px',
     background: 'white',
-    borderRadius: '8px',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-    minWidth: '200px',
+    borderRadius: '12px',
+    boxShadow: '0 10px 40px rgba(0,0,0,0.15)',
+    minWidth: '220px',
     zIndex: 1000,
+    overflow: 'hidden',
   },
   dropdownItem: {
     width: '100%',
-    padding: '12px 20px',
+    padding: '14px 20px',
     border: 'none',
     background: 'none',
     textAlign: 'left',
     cursor: 'pointer',
     fontSize: '14px',
     color: '#2d3748',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
     transition: 'background 0.2s',
   },
   sidebar: {
-    background: '#879BFF',
+    background: 'linear-gradient(180deg, #879BFF 0%, #7c8fff 100%)',
     color: 'white',
     padding: '20px 0',
+    boxShadow: '4px 0 20px rgba(135, 155, 255, 0.2)',
   },
   navMenu: {
     listStyle: 'none',
@@ -400,29 +416,29 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   navItem: {
     margin: 0,
+    position: 'relative',
   },
   navLink: {
     display: 'block',
-    padding: '15px 25px',
+    padding: '16px 25px',
     color: 'white',
     textDecoration: 'none',
     transition: 'all 0.3s',
+    position: 'relative',
   },
   navLinkActive: {
     background: 'white',
     color: '#879BFF',
-    fontWeight: 'bold',
-    borderLeft: '4px solid white',
-    paddingLeft: '21px',
+    fontWeight: 600,
   },
-  subNavLink: {
-    display: 'block',
-    padding: '12px 25px 12px 45px',
-    color: 'white',
-    textDecoration: 'none',
-    fontSize: '14px',
-    transition: 'all 0.3s',
-    background: 'transparent',
+  activeIndicator: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: '4px',
+    background: '#FF6495',
+    borderRadius: '0 4px 4px 0',
   },
   mainContent: {
     padding: '30px',
@@ -436,6 +452,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     right: 0,
     bottom: 0,
     background: 'rgba(0, 0, 0, 0.5)',
+    backdropFilter: 'blur(4px)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -443,13 +460,13 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   modal: {
     background: 'white',
-    borderRadius: '12px',
+    borderRadius: '16px',
     padding: '0',
     width: '90%',
     maxWidth: '500px',
     maxHeight: '90vh',
     overflowY: 'auto',
-    boxShadow: '0 10px 40px rgba(0,0,0,0.3)',
+    boxShadow: '0 25px 80px rgba(0,0,0,0.3)',
   },
   modalHeader: {
     display: 'flex',
@@ -467,17 +484,17 @@ const styles: { [key: string]: React.CSSProperties } = {
   closeButton: {
     background: 'none',
     border: 'none',
-    fontSize: '32px',
+    fontSize: '28px',
     color: '#718096',
     cursor: 'pointer',
     padding: 0,
-    width: '32px',
-    height: '32px',
+    width: '36px',
+    height: '36px',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: '4px',
-    transition: 'background 0.2s',
+    borderRadius: '8px',
+    transition: 'all 0.2s',
   },
   form: {
     display: 'flex',
@@ -496,12 +513,12 @@ const styles: { [key: string]: React.CSSProperties } = {
     color: '#4a5568',
   },
   input: {
-    padding: '10px 12px',
-    border: '1px solid #e2e8f0',
-    borderRadius: '6px',
+    padding: '12px 14px',
+    border: '2px solid #e2e8f0',
+    borderRadius: '10px',
     fontSize: '14px',
     outline: 'none',
-    transition: 'border-color 0.2s',
+    transition: 'all 0.2s',
   },
   helpText: {
     fontSize: '12px',
@@ -511,9 +528,10 @@ const styles: { [key: string]: React.CSSProperties } = {
     padding: '12px 16px',
     background: '#fee',
     color: '#c53030',
-    borderRadius: '6px',
+    borderRadius: '8px',
     fontSize: '14px',
     border: '1px solid #fc8181',
+    overflow: 'hidden',
   },
   formActions: {
     display: 'flex',
@@ -525,21 +543,22 @@ const styles: { [key: string]: React.CSSProperties } = {
     background: 'linear-gradient(135deg, #879BFF 0%, #FF6495 100%)',
     color: 'white',
     border: 'none',
-    padding: '12px 24px',
-    borderRadius: '8px',
+    padding: '14px 28px',
+    borderRadius: '10px',
     fontSize: '14px',
     fontWeight: '600',
     cursor: 'pointer',
-    transition: 'transform 0.2s',
+    transition: 'all 0.2s',
   },
   secondaryButton: {
-    padding: '12px 24px',
-    border: '1px solid #e2e8f0',
+    padding: '14px 28px',
+    border: '2px solid #e2e8f0',
     background: 'white',
     color: '#4a5568',
-    borderRadius: '8px',
+    borderRadius: '10px',
     fontSize: '14px',
     fontWeight: '600',
     cursor: 'pointer',
+    transition: 'all 0.2s',
   },
 };
