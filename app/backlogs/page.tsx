@@ -95,7 +95,6 @@ export default function BacklogsPage() {
   }, []);
 
   useEffect(() => {
-    // Get current user from localStorage
     const userData = localStorage.getItem('user');
     if (userData) {
       setCurrentUser(JSON.parse(userData));
@@ -108,11 +107,11 @@ export default function BacklogsPage() {
 
   useEffect(() => {
     applyFilter();
-    setCurrentPage(1); // Reset to page 1 when filter or search changes
+    setCurrentPage(1);
   }, [backlogs, filter, searchQuery]);
 
   useEffect(() => {
-    setCurrentPage(1); // Reset to page 1 when view mode changes
+    setCurrentPage(1);
   }, [viewMode]);
 
   const fetchBacklogs = async () => {
@@ -126,7 +125,6 @@ export default function BacklogsPage() {
       const data = await response.json();
       if (data.success) {
         setBacklogs(data.backlogs);
-        // Extract unique projects
         const uniqueProjects = Array.from(new Set(data.backlogs.map((b: Backlog) => b.project)));
         setProjects(uniqueProjects as string[]);
       } else {
@@ -176,20 +174,16 @@ export default function BacklogsPage() {
   const applyFilter = () => {
     let filtered = backlogs;
 
-    // Apply status filter
     if (filter === 'all') {
       filtered = backlogs;
     } else if (filter === 'done') {
-      // Show items where status is 'done' OR taskStatus is 'completed'
       filtered = backlogs.filter(b => b.status === 'done' || b.taskStatus === 'completed');
     } else if (filter === 'in-sprint') {
-      // Show items in sprint that are NOT completed
       filtered = backlogs.filter(b => b.status === 'in-sprint' && b.taskStatus !== 'completed');
     } else {
       filtered = backlogs.filter(b => b.status === filter);
     }
 
-    // Apply search filter
     if (searchQuery.trim() !== '') {
       const query = searchQuery.toLowerCase();
       filtered = filtered.filter(b =>
@@ -203,12 +197,10 @@ export default function BacklogsPage() {
     setFilteredBacklogs(filtered);
   };
 
-  // Pagination calculations
   const totalPages = Math.ceil(filteredBacklogs.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = startIndex + itemsPerPage;
   const paginatedBacklogs = filteredBacklogs.slice(startIndex, endIndex);
-  const showPagination = true; // Always show pagination
 
   const goToPage = (page: number) => {
     setCurrentPage(page);
@@ -270,7 +262,6 @@ export default function BacklogsPage() {
   };
 
   const handleDelete = async (backlog: Backlog) => {
-    // Check if backlog is in a sprint
     if (backlog.sprint) {
       setBacklogDeleteWarning(backlog);
       setShowDeleteWarningModal(true);
@@ -389,14 +380,30 @@ export default function BacklogsPage() {
     setShowModal(true);
   };
 
-  const getPriorityColor = (priority: string) => {
+  const getPriorityConfig = (priority: string) => {
     switch (priority) {
-      case 'high': return '#f56565';
-      case 'medium': return '#ed8936';
-      case 'low': return '#48bb78';
-      default: return '#718096';
+      case 'high': return { color: '#dc2626', bg: '#fef2f2', label: 'High' };
+      case 'medium': return { color: '#f59e0b', bg: '#fffbeb', label: 'Medium' };
+      case 'low': return { color: '#16a34a', bg: '#f0fdf4', label: 'Low' };
+      default: return { color: '#6b7280', bg: '#f9fafb', label: 'None' };
     }
   };
+
+  const getStatusConfig = (status: string, taskStatus: string) => {
+    if (status === 'done' || taskStatus === 'completed') {
+      return { color: '#16a34a', bg: '#f0fdf4', label: 'Completed' };
+    }
+    if (status === 'in-sprint') {
+      return { color: '#879BFF', bg: '#F0F4FF', label: 'In Sprint' };
+    }
+    return { color: '#6b7280', bg: '#f9fafb', label: 'Available' };
+  };
+
+  // Stats calculations
+  const totalBacklogs = backlogs.length;
+  const inSprintCount = backlogs.filter(b => b.status === 'in-sprint' && b.taskStatus !== 'completed').length;
+  const completedCount = backlogs.filter(b => b.status === 'done' || b.taskStatus === 'completed').length;
+  const availableCount = backlogs.filter(b => b.status === 'backlog').length;
 
   if (loading) {
     return (
@@ -409,253 +416,366 @@ export default function BacklogsPage() {
   return (
     <AppLayout>
       <div style={styles.container}>
-        <div style={styles.header}>
-          <h2 style={styles.title}>Product Backlogs</h2>
+        {/* Header Section */}
+        <div style={styles.headerSection}>
+          <div style={styles.headerLeft}>
+            <h1 style={styles.pageTitle}>Product Backlogs</h1>
+            <p style={styles.pageSubtitle}>Manage and prioritize your product backlog items</p>
+          </div>
           <div style={styles.headerRight}>
+            {currentUser?.role !== 'member' && (
+              <button style={styles.addButton} onClick={openAddModal}>
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" viewBox="0 0 16 16">
+                  <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4"/>
+                </svg>
+                Add Backlog
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Stats Cards */}
+        <div style={styles.statsRow}>
+          <div style={styles.statCard}>
+            <div style={styles.statIcon}>
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="#879BFF" viewBox="0 0 16 16">
+                <path d="M14 1a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1zM2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2z"/>
+                <path d="M10.97 4.97a.75.75 0 0 1 1.071 1.05l-3.992 4.99a.75.75 0 0 1-1.08.02L4.324 8.384a.75.75 0 1 1 1.06-1.06l2.094 2.093 3.473-4.425z"/>
+              </svg>
+            </div>
+            <div style={styles.statContent}>
+              <span style={styles.statValue}>{totalBacklogs}</span>
+              <span style={styles.statLabel}>Total Items</span>
+            </div>
+          </div>
+          <div style={styles.statCard}>
+            <div style={{...styles.statIcon, backgroundColor: '#f0fdf4'}}>
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="#16a34a" viewBox="0 0 16 16">
+                <path d="M2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2zm10.03 4.97a.75.75 0 0 1 .011 1.05l-3.992 4.99a.75.75 0 0 1-1.08.02L4.324 8.384a.75.75 0 1 1 1.06-1.06l2.094 2.093 3.473-4.425a.75.75 0 0 1 1.08-.022z"/>
+              </svg>
+            </div>
+            <div style={styles.statContent}>
+              <span style={styles.statValue}>{availableCount}</span>
+              <span style={styles.statLabel}>Available</span>
+            </div>
+          </div>
+          <div style={styles.statCard}>
+            <div style={{...styles.statIcon, backgroundColor: '#F0F4FF'}}>
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="#879BFF" viewBox="0 0 16 16">
+                <path d="M8 3.5a.5.5 0 0 0-1 0V9a.5.5 0 0 0 .252.434l3.5 2a.5.5 0 0 0 .496-.868L8 8.71z"/>
+                <path d="M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16m7-8A7 7 0 1 1 1 8a7 7 0 0 1 14 0"/>
+              </svg>
+            </div>
+            <div style={styles.statContent}>
+              <span style={styles.statValue}>{inSprintCount}</span>
+              <span style={styles.statLabel}>In Sprint</span>
+            </div>
+          </div>
+          <div style={styles.statCard}>
+            <div style={{...styles.statIcon, backgroundColor: '#fef2f2'}}>
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="#16a34a" viewBox="0 0 16 16">
+                <path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-3.97-3.03a.75.75 0 0 0-1.08.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-.01-1.05z"/>
+              </svg>
+            </div>
+            <div style={styles.statContent}>
+              <span style={styles.statValue}>{completedCount}</span>
+              <span style={styles.statLabel}>Completed</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Controls Row */}
+        <div style={styles.controlsRow}>
+          {/* Filter Tabs */}
+          <div style={styles.filterTabs}>
+            {[
+              { key: 'all', label: 'All' },
+              { key: 'backlog', label: 'Available' },
+              { key: 'in-sprint', label: 'In Sprint' },
+              { key: 'done', label: 'Completed' }
+            ].map((f) => (
+              <button
+                key={f.key}
+                style={{
+                  ...styles.filterTab,
+                  ...(filter === f.key ? styles.filterTabActive : {}),
+                }}
+                onClick={() => setFilter(f.key)}
+              >
+                {f.label}
+                {f.key === 'all' && <span style={styles.tabCount}>{totalBacklogs}</span>}
+                {f.key === 'backlog' && <span style={styles.tabCount}>{availableCount}</span>}
+                {f.key === 'in-sprint' && <span style={styles.tabCount}>{inSprintCount}</span>}
+                {f.key === 'done' && <span style={styles.tabCount}>{completedCount}</span>}
+              </button>
+            ))}
+          </div>
+
+          {/* Right Controls */}
+          <div style={styles.rightControls}>
+            {/* View Toggle */}
             <div style={styles.viewToggle}>
               <button
                 style={{
-                  ...styles.viewButton,
-                  ...(viewMode === 'list' ? styles.viewButtonActive : {}),
+                  ...styles.viewBtn,
+                  ...(viewMode === 'list' ? styles.viewBtnActive : {}),
                 }}
                 onClick={() => setViewMode('list')}
                 title="List View"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" viewBox="0 0 16 16">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
                   <path fillRule="evenodd" d="M2.5 12a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5m0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5m0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5"/>
                 </svg>
               </button>
               <button
                 style={{
-                  ...styles.viewButton,
-                  ...(viewMode === 'grid' ? styles.viewButtonActive : {}),
+                  ...styles.viewBtn,
+                  ...(viewMode === 'grid' ? styles.viewBtnActive : {}),
                 }}
                 onClick={() => setViewMode('grid')}
                 title="Grid View"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" viewBox="0 0 16 16">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
                   <path d="M1 2.5A1.5 1.5 0 0 1 2.5 1h3A1.5 1.5 0 0 1 7 2.5v3A1.5 1.5 0 0 1 5.5 7h-3A1.5 1.5 0 0 1 1 5.5zm8 0A1.5 1.5 0 0 1 10.5 1h3A1.5 1.5 0 0 1 15 2.5v3A1.5 1.5 0 0 1 13.5 7h-3A1.5 1.5 0 0 1 9 5.5zM1 10.5A1.5 1.5 0 0 1 2.5 9h3A1.5 1.5 0 0 1 7 10.5v3A1.5 1.5 0 0 1 5.5 15h-3A1.5 1.5 0 0 1 1 13.5zm8 0A1.5 1.5 0 0 1 10.5 9h3a1.5 1.5 0 0 1 1.5 1.5v3a1.5 1.5 0 0 1-1.5 1.5h-3A1.5 1.5 0 0 1 9 13.5z"/>
                 </svg>
               </button>
             </div>
-            {currentUser?.role !== 'member' && (
-              <button style={styles.primaryButton} onClick={openAddModal}>
-                + Add Backlog Item
-              </button>
-            )}
-          </div>
-        </div>
 
-        <div style={styles.filterAndSearchRow}>
-          <div style={styles.filterRow}>
-            {['all', 'backlog', 'in-sprint', 'done'].map((f) => (
-              <button
-                key={f}
-                style={{
-                  ...styles.filterButton,
-                  ...(filter === f ? styles.filterButtonActive : {}),
-                }}
-                onClick={() => setFilter(f)}
-              >
-                {f === 'all' ? 'All' : f === 'backlog' ? 'Available' : f === 'in-sprint' ? 'In Sprint' : 'Completed'}
-              </button>
-            ))}
-          </div>
-
-          {/* Search Bar */}
-          <div style={styles.searchContainer}>
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="16"
-              height="16"
-              fill="currentColor"
-              viewBox="0 0 16 16"
-              style={styles.searchIcon}
-            >
-              <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z"/>
-            </svg>
-            <input
-              type="text"
-              style={styles.searchInput}
-              placeholder="Search backlogs"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-            {searchQuery && (
-              <button
-                style={styles.clearSearchButton}
-                onClick={() => setSearchQuery('')}
-                title="Clear search"
-              >
-                ✕
-              </button>
-            )}
+            {/* Search */}
+            <div style={styles.searchBox}>
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#9ca3af" viewBox="0 0 16 16" style={styles.searchIcon}>
+                <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z"/>
+              </svg>
+              <input
+                type="text"
+                style={styles.searchInput}
+                placeholder="Search backlogs..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+              {searchQuery && (
+                <button style={styles.clearSearch} onClick={() => setSearchQuery('')}>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
+                    <path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8z"/>
+                  </svg>
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
         {/* Pagination */}
-        {showPagination && (
-          <div style={styles.paginationContainer}>
-            <button
-              style={{
-                ...styles.paginationButton,
-                ...(currentPage === 1 ? styles.paginationButtonDisabled : {}),
-              }}
-              onClick={() => goToPage(currentPage - 1)}
-              disabled={currentPage === 1}
-            >
-              ‹
-            </button>
-            <span style={styles.paginationInfo}>
-              {currentPage} / {totalPages}
+        {totalPages > 0 && (
+          <div style={styles.paginationRow}>
+            <span style={styles.resultCount}>
+              Showing {startIndex + 1}-{Math.min(endIndex, filteredBacklogs.length)} of {filteredBacklogs.length} items
             </span>
-            <button
-              style={{
-                ...styles.paginationButton,
-                ...(currentPage === totalPages ? styles.paginationButtonDisabled : {}),
-              }}
-              onClick={() => goToPage(currentPage + 1)}
-              disabled={currentPage === totalPages}
-            >
-              ›
-            </button>
+            <div style={styles.paginationControls}>
+              <button
+                style={{...styles.pageBtn, ...(currentPage === 1 ? styles.pageBtnDisabled : {})}}
+                onClick={() => goToPage(currentPage - 1)}
+                disabled={currentPage === 1}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                  <path fillRule="evenodd" d="M11.354 1.646a.5.5 0 0 1 0 .708L5.707 8l5.647 5.646a.5.5 0 0 1-.708.708l-6-6a.5.5 0 0 1 0-.708l6-6a.5.5 0 0 1 .708 0"/>
+                </svg>
+              </button>
+              <span style={styles.pageInfo}>{currentPage} / {totalPages || 1}</span>
+              <button
+                style={{...styles.pageBtn, ...(currentPage === totalPages || totalPages === 0 ? styles.pageBtnDisabled : {})}}
+                onClick={() => goToPage(currentPage + 1)}
+                disabled={currentPage === totalPages || totalPages === 0}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                  <path fillRule="evenodd" d="M4.646 1.646a.5.5 0 0 1 .708 0l6 6a.5.5 0 0 1 0 .708l-6 6a.5.5 0 0 1-.708-.708L10.293 8 4.646 2.354a.5.5 0 0 1 0-.708"/>
+                </svg>
+              </button>
+            </div>
           </div>
         )}
 
-        <div style={viewMode === 'grid' ? styles.backlogGridView : styles.backlogGrid}>
-          {filteredBacklogs.length === 0 ? (
-            <div style={styles.empty}>No backlog items found</div>
-          ) : (
-            paginatedBacklogs.map((backlog) => (
-              <div
-                key={backlog._id}
-                style={{
-                  ...(viewMode === 'grid' ? styles.backlogCardGrid : styles.backlogCard),
-                  borderLeft: `4px solid ${getPriorityColor(backlog.priority)}`,
-                }}
-                onMouseEnter={(e) => {
-                  if (viewMode === 'grid') {
-                    e.currentTarget.style.transform = 'translateY(-4px)';
-                    e.currentTarget.style.boxShadow = '0 8px 16px rgba(0,0,0,0.12)';
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (viewMode === 'grid') {
-                    e.currentTarget.style.transform = 'translateY(0)';
-                    e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.08)';
-                  }
-                }}
-              >
-                <div style={styles.cardHeader}>
-                  <div style={styles.cardHeaderContent}>
-                    <h3 style={styles.cardTitle}>{backlog.title}</h3>
-                    <p style={styles.cardProject}>{backlog.project}</p>
+        {/* Backlog Items */}
+        {filteredBacklogs.length === 0 ? (
+          <div style={styles.emptyState}>
+            <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" fill="#d1d5db" viewBox="0 0 16 16">
+              <path d="M14 1a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1zM2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2z"/>
+            </svg>
+            <p style={styles.emptyText}>No backlog items found</p>
+            <p style={styles.emptySubtext}>
+              {searchQuery ? 'Try adjusting your search' : 'Create a new backlog item to get started'}
+            </p>
+          </div>
+        ) : (
+          <div style={viewMode === 'grid' ? styles.gridView : styles.listView}>
+            {paginatedBacklogs.map((backlog) => {
+              const priorityConfig = getPriorityConfig(backlog.priority);
+              const statusConfig = getStatusConfig(backlog.status, backlog.taskStatus);
+
+              return (
+                <div
+                  key={backlog._id}
+                  style={viewMode === 'grid' ? styles.gridCard : styles.listCard}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = '#879BFF';
+                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(135, 155, 255, 0.15)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = '#e5e7eb';
+                    e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.05)';
+                  }}
+                >
+                  {/* Priority Indicator */}
+                  <div style={{...styles.priorityLine, backgroundColor: priorityConfig.color}} />
+
+                  <div style={styles.cardContent}>
+                    {/* Card Header */}
+                    <div style={styles.cardHeader}>
+                      <div style={styles.cardTitleRow}>
+                        <h3 style={styles.cardTitle}>{backlog.title}</h3>
+                        <span style={{
+                          ...styles.priorityBadge,
+                          backgroundColor: priorityConfig.bg,
+                          color: priorityConfig.color
+                        }}>
+                          {priorityConfig.label}
+                        </span>
+                      </div>
+                      <div style={styles.cardMeta}>
+                        <span style={styles.projectTag}>{backlog.project}</span>
+                        <span style={{
+                          ...styles.statusBadge,
+                          backgroundColor: statusConfig.bg,
+                          color: statusConfig.color
+                        }}>
+                          {statusConfig.label}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Description */}
+                    {backlog.description && (
+                      <p style={styles.cardDescription}>{backlog.description}</p>
+                    )}
+
+                    {/* Sprint Badge */}
                     {backlog.sprint && (
-                      <span style={styles.sprintNameBadge}>
-                        {backlog.sprint.name}
+                      <div style={styles.sprintRow}>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="#879BFF" viewBox="0 0 16 16">
+                          <path d="M8 3.5a.5.5 0 0 0-1 0V9a.5.5 0 0 0 .252.434l3.5 2a.5.5 0 0 0 .496-.868L8 8.71z"/>
+                          <path d="M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16m7-8A7 7 0 1 1 1 8a7 7 0 0 1 14 0"/>
+                        </svg>
+                        <span style={styles.sprintName}>{backlog.sprint.name}</span>
+                      </div>
+                    )}
+
+                    {/* Assignee */}
+                    <div style={styles.assigneeRow}>
+                      <div style={styles.avatar}>
+                        {backlog.assignee?.name?.charAt(0) || '?'}
+                      </div>
+                      <span style={styles.assigneeName}>
+                        {backlog.assignee?.name || 'Unassigned'}
                       </span>
+                    </div>
+
+                    {/* Actions */}
+                    {currentUser?.role !== 'member' && (
+                      <div style={styles.cardActions}>
+                        {backlog.status === 'backlog' && sprints.length > 0 && (
+                          <button
+                            style={styles.actionBtn}
+                            onClick={() => openAddToSprintModal(backlog)}
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
+                              <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4"/>
+                            </svg>
+                            Add to Sprint
+                          </button>
+                        )}
+                        {backlog.sprint && (
+                          <button
+                            style={{...styles.actionBtn, ...styles.actionBtnSecondary}}
+                            onClick={() => openRemoveConfirmModal(backlog)}
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
+                              <path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8z"/>
+                            </svg>
+                            Remove
+                          </button>
+                        )}
+                        <button
+                          style={{...styles.actionBtn, ...styles.actionBtnEdit}}
+                          onClick={() => handleEdit(backlog)}
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
+                            <path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207zm1.586 3L10.5 3.207 4 9.707V10h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.293zm-9.761 5.175-.106.106-1.528 3.821 3.821-1.528.106-.106A.5.5 0 0 1 5 12.5V12h-.5a.5.5 0 0 1-.5-.5V11h-.5a.5.5 0 0 1-.468-.325"/>
+                          </svg>
+                          Edit
+                        </button>
+                        <button
+                          style={{...styles.actionBtn, ...styles.actionBtnDelete}}
+                          onClick={() => handleDelete(backlog)}
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
+                            <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z"/>
+                            <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z"/>
+                          </svg>
+                          Delete
+                        </button>
+                      </div>
                     )}
                   </div>
                 </div>
+              );
+            })}
+          </div>
+        )}
 
-                {backlog.description ? (
-                  <p style={styles.description}>{backlog.description}</p>
-                ) : (
-                  viewMode === 'grid' && (
-                    <p style={styles.noDescription}>No description</p>
-                  )
-                )}
-
-                <div style={viewMode === 'grid' ? styles.cardMetaGrid : styles.cardMeta}>
-                  <div style={viewMode === 'grid' ? styles.metaLeftGrid : styles.metaLeft}>
-                    <div style={styles.metaItem}>
-                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" style={{ color: '#718096', flexShrink: 0 }}>
-                        <path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6m2-3a2 2 0 1 1-4 0 2 2 0 0 1 4 0m4 8c0 1-1 1-1 1H3s-1 0-1-1 1-4 6-4 6 3 6 4m-1-.004c-.001-.246-.154-.986-.832-1.664C11.516 10.68 10.289 10 8 10s-3.516.68-4.168 1.332c-.678.678-.83 1.418-.832 1.664z"/>
-                      </svg>
-                      <span>{backlog.assignee?.name || 'Unassigned'}</span>
-                    </div>
-                  </div>
-                  {currentUser?.role !== 'member' && (
-                    <div style={viewMode === 'grid' ? styles.cardActionsGrid : styles.cardActions}>
-                      {backlog.status === 'backlog' && sprints.length > 0 && (
-                        <button
-                          style={viewMode === 'grid' ? styles.sprintSelectGrid : styles.sprintSelect}
-                          onClick={() => openAddToSprintModal(backlog)}
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16" style={{ marginRight: '6px', verticalAlign: 'middle' }}>
-                            <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4"/>
-                          </svg>
-                          Add to Sprint
-                        </button>
-                      )}
-                      {backlog.sprint && (
-                        <button
-                          style={viewMode === 'grid' ? styles.removeSprintButtonGrid : styles.removeSprintButton}
-                          onClick={() => openRemoveConfirmModal(backlog)}
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16" style={{ marginRight: '6px', verticalAlign: 'middle' }}>
-                            <path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8z"/>
-                          </svg>
-                          Remove
-                        </button>
-                      )}
-                      <button style={viewMode === 'grid' ? styles.actionButtonGrid : styles.actionButton} onClick={() => handleEdit(backlog)}>
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16" style={{ marginRight: '6px', verticalAlign: 'middle' }}>
-                          <path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207zm1.586 3L10.5 3.207 4 9.707V10h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.293zm-9.761 5.175-.106.106-1.528 3.821 3.821-1.528.106-.106A.5.5 0 0 1 5 12.5V12h-.5a.5.5 0 0 1-.5-.5V11h-.5a.5.5 0 0 1-.468-.325"/>
-                        </svg>
-                        Edit
-                      </button>
-                      <button style={viewMode === 'grid' ? styles.deleteButtonGrid : styles.deleteButton} onClick={() => handleDelete(backlog)}>
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16" style={{ marginRight: '6px', verticalAlign: 'middle' }}>
-                          <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z"/>
-                          <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z"/>
-                        </svg>
-                        Delete
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-
-        {/* Modal */}
+        {/* Create/Edit Modal */}
         {showModal && (
           <div style={styles.modalOverlay} onClick={() => setShowModal(false)}>
             <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
-              <h2 style={styles.modalTitle}>
-                {editingBacklog ? 'Edit Backlog Item' : 'Add Backlog Item'}
-              </h2>
+              <div style={styles.modalHeader}>
+                <h2 style={styles.modalTitle}>
+                  {editingBacklog ? 'Edit Backlog Item' : 'Add Backlog Item'}
+                </h2>
+                <button style={styles.modalClose} onClick={() => { setShowModal(false); resetForm(); }}>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
+                    <path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8z"/>
+                  </svg>
+                </button>
+              </div>
               <form onSubmit={handleCreateBacklog} style={styles.form}>
                 <div style={styles.formGroup}>
-                  <label style={styles.label}>Title *</label>
+                  <label style={styles.label}>TITLE</label>
                   <input
                     type="text"
                     style={styles.input}
                     value={formData.title}
                     onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                    placeholder="Enter backlog title"
                     required
                   />
                 </div>
 
                 <div style={styles.formGroup}>
-                  <label style={styles.label}>Description</label>
+                  <label style={styles.label}>DESCRIPTION</label>
                   <textarea
                     style={styles.textarea}
                     value={formData.description}
                     onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                    placeholder="Enter description (optional)"
                     rows={3}
                   />
                 </div>
 
                 <div style={styles.formGroup}>
-                  <label style={styles.label}>Project *</label>
+                  <label style={styles.label}>PROJECT</label>
                   {!isAddingNewProject ? (
                     <div ref={projectDropdownRef} style={{ position: 'relative' }}>
                       <input
                         type="text"
-                        style={{ ...styles.input, width: '100%', boxSizing: 'border-box' }}
+                        style={styles.input}
                         value={projectSearchQuery || formData.project}
                         onChange={(e) => {
                           setProjectSearchQuery(e.target.value);
@@ -666,11 +786,9 @@ export default function BacklogsPage() {
                         required={!formData.project}
                       />
                       {showProjectDropdown && (
-                        <div style={styles.searchableDropdown}>
+                        <div style={styles.dropdown}>
                           {projects
-                            .filter((p) =>
-                              p.toLowerCase().includes(projectSearchQuery.toLowerCase())
-                            )
+                            .filter((p) => p.toLowerCase().includes(projectSearchQuery.toLowerCase()))
                             .map((p) => (
                               <div
                                 key={p}
@@ -680,29 +798,17 @@ export default function BacklogsPage() {
                                   setProjectSearchQuery('');
                                   setShowProjectDropdown(false);
                                 }}
-                                onMouseEnter={(e) => {
-                                  e.currentTarget.style.backgroundColor = '#f7fafc';
-                                }}
-                                onMouseLeave={(e) => {
-                                  e.currentTarget.style.backgroundColor = 'white';
-                                }}
                               >
                                 {p}
                               </div>
                             ))}
                           <div
-                            style={{ ...styles.dropdownItem, color: '#667eea', fontWeight: '500' }}
+                            style={{...styles.dropdownItem, color: '#879BFF', fontWeight: 500}}
                             onClick={() => {
                               setIsAddingNewProject(true);
                               setFormData({ ...formData, project: '' });
                               setProjectSearchQuery('');
                               setShowProjectDropdown(false);
-                            }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.backgroundColor = '#f7fafc';
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.backgroundColor = 'white';
                             }}
                           >
                             + Add New Project
@@ -723,13 +829,13 @@ export default function BacklogsPage() {
                       />
                       <button
                         type="button"
-                        style={{ ...styles.backToSelectButton, marginTop: 0, whiteSpace: 'nowrap', padding: '10px 12px' }}
+                        style={styles.backBtn}
                         onClick={() => {
                           setIsAddingNewProject(false);
                           setFormData({ ...formData, project: '' });
                         }}
                       >
-                        ← Back to select
+                        Cancel
                       </button>
                     </div>
                   )}
@@ -737,9 +843,9 @@ export default function BacklogsPage() {
 
                 <div style={styles.formRow}>
                   <div style={styles.formGroup}>
-                    <label style={styles.label}>Priority</label>
+                    <label style={styles.label}>PRIORITY</label>
                     <select
-                      style={styles.input}
+                      style={styles.select}
                       value={formData.priority}
                       onChange={(e) => setFormData({ ...formData, priority: e.target.value as any })}
                     >
@@ -749,39 +855,35 @@ export default function BacklogsPage() {
                     </select>
                   </div>
 
-                </div>
-
-                <div style={styles.formGroup}>
-                  <label style={styles.label}>Assign To</label>
-                  <select
-                    style={styles.input}
-                    value={formData.assignee}
-                    onChange={(e) => setFormData({ ...formData, assignee: e.target.value })}
-                  >
-                    <option value="">Unassigned</option>
-                    {users
-                      .filter(user => user.role !== 'super admin' && user.role !== 'super-admin' && user.role !== 'admin')
-                      .map((user) => (
-                        <option key={user._id} value={user._id}>
-                          {user.name} ({user.position})
-                        </option>
-                      ))}
-                  </select>
+                  <div style={styles.formGroup}>
+                    <label style={styles.label}>ASSIGN TO</label>
+                    <select
+                      style={styles.select}
+                      value={formData.assignee}
+                      onChange={(e) => setFormData({ ...formData, assignee: e.target.value })}
+                    >
+                      <option value="">Unassigned</option>
+                      {users
+                        .filter(user => user.role !== 'super admin' && user.role !== 'super-admin' && user.role !== 'admin')
+                        .map((user) => (
+                          <option key={user._id} value={user._id}>
+                            {user.name} ({user.position})
+                          </option>
+                        ))}
+                    </select>
+                  </div>
                 </div>
 
                 <div style={styles.formActions}>
-                  <button type="submit" style={styles.primaryButton}>
-                    {editingBacklog ? 'Update' : 'Create'}
-                  </button>
                   <button
                     type="button"
-                    style={styles.secondaryButton}
-                    onClick={() => {
-                      setShowModal(false);
-                      resetForm();
-                    }}
+                    style={styles.cancelBtn}
+                    onClick={() => { setShowModal(false); resetForm(); }}
                   >
                     Cancel
+                  </button>
+                  <button type="submit" style={styles.submitBtn}>
+                    {editingBacklog ? 'Update' : 'Create'}
                   </button>
                 </div>
               </form>
@@ -792,19 +894,20 @@ export default function BacklogsPage() {
         {/* Delete Warning Modal */}
         {showDeleteWarningModal && backlogDeleteWarning && (
           <div style={styles.modalOverlay} onClick={() => setShowDeleteWarningModal(false)}>
-            <div style={styles.warningModal} onClick={(e) => e.stopPropagation()}>
-              <div style={styles.warningIcon}>⚠</div>
-              <h2 style={styles.warningModalTitle}>Cannot Delete</h2>
-              <p style={styles.warningModalMessage}>
+            <div style={styles.confirmModal} onClick={(e) => e.stopPropagation()}>
+              <div style={styles.warningIcon}>
+                <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" fill="#f59e0b" viewBox="0 0 16 16">
+                  <path d="M8.982 1.566a1.13 1.13 0 0 0-1.96 0L.165 13.233c-.457.778.091 1.767.98 1.767h13.713c.889 0 1.438-.99.98-1.767zM8 5c.535 0 .954.462.9.995l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 5.995A.905.905 0 0 1 8 5m.002 6a1 1 0 1 1 0 2 1 1 0 0 1 0-2"/>
+                </svg>
+              </div>
+              <h3 style={styles.confirmTitle}>Cannot Delete</h3>
+              <p style={styles.confirmText}>
                 <strong>{backlogDeleteWarning.title}</strong> is currently in the <strong>{backlogDeleteWarning.sprint?.name}</strong> sprint. Please remove it from the sprint before deleting.
               </p>
-              <div style={styles.confirmModalActions}>
+              <div style={styles.confirmActions}>
                 <button
-                  style={styles.cancelButton}
-                  onClick={() => {
-                    setShowDeleteWarningModal(false);
-                    setBacklogDeleteWarning(null);
-                  }}
+                  style={styles.confirmOkBtn}
+                  onClick={() => { setShowDeleteWarningModal(false); setBacklogDeleteWarning(null); }}
                 >
                   OK
                 </button>
@@ -817,25 +920,25 @@ export default function BacklogsPage() {
         {showRemoveConfirmModal && backlogToRemove && (
           <div style={styles.modalOverlay} onClick={() => setShowRemoveConfirmModal(false)}>
             <div style={styles.confirmModal} onClick={(e) => e.stopPropagation()}>
-              <h2 style={styles.confirmModalTitle}>Remove from Sprint?</h2>
-              <p style={styles.confirmModalMessage}>
+              <div style={styles.warningIcon}>
+                <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" fill="#879BFF" viewBox="0 0 16 16">
+                  <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"/>
+                  <path d="M5.255 5.786a.237.237 0 0 0 .241.247h.825c.138 0 .248-.113.266-.25.09-.656.54-1.134 1.342-1.134.686 0 1.314.343 1.314 1.168 0 .635-.374.927-.965 1.371-.673.489-1.206 1.06-1.168 1.987l.003.217a.25.25 0 0 0 .25.246h.811a.25.25 0 0 0 .25-.25v-.105c0-.718.273-.927 1.01-1.486.609-.463 1.244-.977 1.244-2.056 0-1.511-1.276-2.241-2.673-2.241-1.267 0-2.655.59-2.75 2.286m1.557 5.763c0 .533.425.927 1.01.927.609 0 1.028-.394 1.028-.927 0-.552-.42-.94-1.029-.94-.584 0-1.009.388-1.009.94"/>
+                </svg>
+              </div>
+              <h3 style={styles.confirmTitle}>Remove from Sprint?</h3>
+              <p style={styles.confirmText}>
                 Are you sure you want to remove <strong>{backlogToRemove.title}</strong> from the <strong>{backlogToRemove.sprint?.name}</strong> sprint?
               </p>
-              <div style={styles.confirmModalActions}>
+              <div style={styles.confirmActions}>
                 <button
-                  style={styles.confirmButton}
-                  onClick={handleRemoveFromSprint}
-                >
-                  Yes, Remove
-                </button>
-                <button
-                  style={styles.cancelButton}
-                  onClick={() => {
-                    setShowRemoveConfirmModal(false);
-                    setBacklogToRemove(null);
-                  }}
+                  style={styles.cancelBtn}
+                  onClick={() => { setShowRemoveConfirmModal(false); setBacklogToRemove(null); }}
                 >
                   Cancel
+                </button>
+                <button style={styles.confirmRemoveBtn} onClick={handleRemoveFromSprint}>
+                  Yes, Remove
                 </button>
               </div>
             </div>
@@ -845,121 +948,86 @@ export default function BacklogsPage() {
         {/* Add to Sprint Modal */}
         {showAddToSprintModal && backlogToAddToSprint && (
           <div style={styles.modalOverlay} onClick={() => setShowAddToSprintModal(false)}>
-            <div style={styles.addToSprintModal} onClick={(e) => e.stopPropagation()}>
-              <h2 style={styles.addToSprintModalTitle}>Add to Sprint</h2>
-              <p style={styles.addToSprintModalSubtitle}>
-                Select a sprint for <strong>{backlogToAddToSprint.title}</strong>
-              </p>
+            <div style={styles.sprintModal} onClick={(e) => e.stopPropagation()}>
+              <div style={styles.modalHeader}>
+                <div>
+                  <h2 style={styles.modalTitle}>Add to Sprint</h2>
+                  <p style={styles.modalSubtitle}>Select a sprint for <strong>{backlogToAddToSprint.title}</strong></p>
+                </div>
+                <button style={styles.modalClose} onClick={() => {
+                  setShowAddToSprintModal(false);
+                  setBacklogToAddToSprint(null);
+                  setSelectedSprintId('');
+                  setSprintSearchQuery('');
+                }}>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
+                    <path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8z"/>
+                  </svg>
+                </button>
+              </div>
 
-              {/* Search Bar */}
-              <div style={styles.sprintSearchContainer}>
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="16"
-                  height="16"
-                  fill="currentColor"
-                  viewBox="0 0 16 16"
-                  style={styles.sprintSearchIcon}
-                >
+              {/* Sprint Search */}
+              <div style={styles.sprintSearch}>
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#9ca3af" viewBox="0 0 16 16" style={styles.sprintSearchIcon}>
                   <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z"/>
                 </svg>
                 <input
                   type="text"
                   style={styles.sprintSearchInput}
-                  placeholder="Search sprints by name..."
+                  placeholder="Search sprints..."
                   value={sprintSearchQuery}
                   onChange={(e) => setSprintSearchQuery(e.target.value)}
                 />
-                {sprintSearchQuery && (
-                  <button
-                    style={styles.clearSprintSearchButton}
-                    onClick={() => setSprintSearchQuery('')}
-                    title="Clear search"
-                  >
-                    ✕
-                  </button>
-                )}
               </div>
 
-              <div style={styles.sprintsList}>
+              <div style={styles.sprintList}>
                 {sprints.filter((sprint) =>
                   sprint.name.toLowerCase().includes(sprintSearchQuery.toLowerCase())
                 ).length === 0 ? (
-                  <div style={styles.noSprintsText}>
+                  <div style={styles.noSprints}>
                     {sprints.length === 0 ? 'No active or planned sprints available' : 'No sprints match your search'}
                   </div>
                 ) : (
                   sprints
-                    .filter((sprint) =>
-                      sprint.name.toLowerCase().includes(sprintSearchQuery.toLowerCase())
-                    )
+                    .filter((sprint) => sprint.name.toLowerCase().includes(sprintSearchQuery.toLowerCase()))
                     .map((sprint) => (
-                    <label
-                      key={sprint._id}
-                      style={{
-                        ...styles.sprintRadioLabel,
-                        ...(selectedSprintId === sprint._id ? styles.sprintRadioLabelSelected : {}),
-                      }}
-                      onMouseEnter={(e) => {
-                        if (selectedSprintId !== sprint._id) {
-                          e.currentTarget.style.borderColor = '#879BFF';
-                          e.currentTarget.style.backgroundColor = '#f7fafc';
-                        }
-                      }}
-                      onMouseLeave={(e) => {
-                        if (selectedSprintId !== sprint._id) {
-                          e.currentTarget.style.borderColor = '#e2e8f0';
-                          e.currentTarget.style.backgroundColor = 'white';
-                        }
-                      }}
-                    >
-                      <input
-                        type="radio"
-                        name="sprint"
-                        value={sprint._id}
-                        checked={selectedSprintId === sprint._id}
-                        onChange={(e) => setSelectedSprintId(e.target.value)}
-                        style={styles.radioInput}
-                      />
-                      <div style={styles.sprintOptionContent}>
-                        <div style={styles.sprintOptionHeader}>
-                          <span style={styles.sprintOptionName}>{sprint.name}</span>
-                          <span
-                            style={{
+                      <label
+                        key={sprint._id}
+                        style={{
+                          ...styles.sprintOption,
+                          ...(selectedSprintId === sprint._id ? styles.sprintOptionSelected : {})
+                        }}
+                      >
+                        <input
+                          type="radio"
+                          name="sprint"
+                          value={sprint._id}
+                          checked={selectedSprintId === sprint._id}
+                          onChange={(e) => setSelectedSprintId(e.target.value)}
+                          style={styles.radioInput}
+                        />
+                        <div style={styles.sprintOptionContent}>
+                          <div style={styles.sprintOptionHeader}>
+                            <span style={styles.sprintOptionName}>{sprint.name}</span>
+                            <span style={{
                               ...styles.sprintStatusBadge,
-                              backgroundColor: sprint.status === 'active' ? '#48bb78' : '#4299e1',
-                            }}
-                          >
-                            {sprint.status}
-                          </span>
-                        </div>
-                        <div style={styles.sprintOptionMeta}>
-                          <span style={styles.sprintMetaItem}>
-                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16" style={{ marginRight: '4px', verticalAlign: 'middle' }}>
-                              <path d="M3.5 0a.5.5 0 0 1 .5.5V1h8V.5a.5.5 0 0 1 1 0V1h1a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2h1V.5a.5.5 0 0 1 .5-.5M1 4v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V4z"/>
-                            </svg>
+                              backgroundColor: sprint.status === 'active' ? '#16a34a' : '#879BFF'
+                            }}>
+                              {sprint.status}
+                            </span>
+                          </div>
+                          <span style={styles.sprintDates}>
                             {new Date(sprint.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - {new Date(sprint.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                           </span>
                         </div>
-                      </div>
-                    </label>
-                  ))
+                      </label>
+                    ))
                 )}
               </div>
 
-              <div style={styles.addToSprintModalActions}>
+              <div style={styles.sprintModalActions}>
                 <button
-                  style={{
-                    ...styles.primaryButton,
-                    ...((!selectedSprintId) ? styles.primaryButtonDisabled : {}),
-                  }}
-                  onClick={handleMoveToSprint}
-                  disabled={!selectedSprintId}
-                >
-                  Add to Sprint
-                </button>
-                <button
-                  style={styles.cancelButton}
+                  style={styles.cancelBtn}
                   onClick={() => {
                     setShowAddToSprintModal(false);
                     setBacklogToAddToSprint(null);
@@ -969,18 +1037,30 @@ export default function BacklogsPage() {
                 >
                   Cancel
                 </button>
+                <button
+                  style={{
+                    ...styles.submitBtn,
+                    ...((!selectedSprintId) ? styles.submitBtnDisabled : {})
+                  }}
+                  onClick={handleMoveToSprint}
+                  disabled={!selectedSprintId}
+                >
+                  Add to Sprint
+                </button>
               </div>
             </div>
           </div>
         )}
 
-        {/* Success Modal */}
+        {/* Success Toast */}
         {showSuccessModal && (
-          <div style={styles.successModalOverlay}>
-            <div style={styles.successModal}>
-              <div style={styles.successIcon}>✓</div>
-              <p style={styles.successMessage}>{successMessage}</p>
+          <div style={styles.successToast}>
+            <div style={styles.successIcon}>
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="white" viewBox="0 0 16 16">
+                <path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-3.97-3.03a.75.75 0 0 0-1.08.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-.01-1.05z"/>
+              </svg>
             </div>
+            <span style={styles.successText}>{successMessage}</span>
           </div>
         )}
       </div>
@@ -991,400 +1071,8 @@ export default function BacklogsPage() {
 const styles: { [key: string]: React.CSSProperties } = {
   container: {
     width: '100%',
-  },
-  header: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '24px',
-  },
-  title: {
-    fontSize: '32px',
-    fontWeight: '600',
-    color: '#2d3748',
-    margin: 0,
-  },
-  headerRight: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-  },
-  viewToggle: {
-    display: 'flex',
-    gap: '8px',
-    background: '#f7fafc',
-    padding: '4px',
-    borderRadius: '8px',
-    border: '1px solid #e2e8f0',
-  },
-  viewButton: {
-    padding: '8px 12px',
-    border: 'none',
-    background: 'transparent',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    color: '#718096',
-    transition: 'all 0.2s',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  viewButtonActive: {
-    background: 'white',
-    color: '#FF6495',
-    boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-  },
-  primaryButton: {
-    background: '#FF6495',
-    color: 'white',
-    border: 'none',
-    padding: '12px 24px',
-    borderRadius: '8px',
-    fontSize: '14px',
-    fontWeight: '600',
-    cursor: 'pointer',
-    transition: 'transform 0.2s',
-  },
-  filterAndSearchRow: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    gap: '16px',
-    marginBottom: '24px',
-    flexWrap: 'wrap',
-  },
-  filterRow: {
-    display: 'flex',
-    gap: '12px',
-    flex: 1,
-    minWidth: '0',
-    flexWrap: 'wrap',
-  },
-  searchContainer: {
-    position: 'relative',
-    width: '25%',
-    minWidth: '200px',
-    maxWidth: '300px',
-    flexShrink: 0,
-    boxSizing: 'border-box',
-  },
-  searchIcon: {
-    position: 'absolute',
-    left: '12px',
-    top: '50%',
-    transform: 'translateY(-50%)',
-    color: '#a0aec0',
-    pointerEvents: 'none' as const,
-  },
-  searchInput: {
-    width: '100%',
-    padding: '8px 40px 8px 36px',
-    border: '2px solid #e2e8f0',
-    borderRadius: '6px',
-    fontSize: '14px',
-    outline: 'none',
-    transition: 'border-color 0.2s',
-    fontFamily: 'inherit',
-    boxSizing: 'border-box',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap',
-  },
-  clearSearchButton: {
-    position: 'absolute',
-    right: '12px',
-    top: '50%',
-    transform: 'translateY(-50%)',
-    background: 'transparent',
-    border: 'none',
-    color: '#a0aec0',
-    fontSize: '18px',
-    cursor: 'pointer',
-    padding: '4px 8px',
-    borderRadius: '4px',
-    transition: 'all 0.2s',
-  },
-  filterButton: {
-    padding: '8px 16px',
-    border: '1px solid #d3d3d3',
-    background: 'white',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    fontSize: '14px',
-    color: '#4a5568',
-    transition: 'all 0.2s',
-    outline: 'none',
-  },
-  filterButtonActive: {
-    background: '#FF6495',
-    color: 'white',
-    border: '1px solid #d3d3d3',
-    outline: 'none',
-  },
-  backlogGrid: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '16px',
-  },
-  backlogGridView: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(380px, 1fr))',
-    columnGap: '24px',
-    rowGap: '70px',
-  },
-  backlogCard: {
-    background: 'white',
-    padding: '20px',
-    borderRadius: '10px',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-    transition: 'transform 0.2s, box-shadow 0.2s',
-  },
-  backlogCardGrid: {
-    background: 'white',
-    padding: '24px',
-    borderRadius: '12px',
-    boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
-    transition: 'all 0.2s ease',
-    display: 'flex',
-    flexDirection: 'column',
-    height: '100%',
-    minHeight: '280px',
-    border: '1px solid #f0f0f0',
-  },
-  cardHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: '16px',
-  },
-  cardHeaderContent: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '6px',
-    width: '100%',
-  },
-  cardTitle: {
-    fontSize: '18px',
-    fontWeight: '600',
-    color: '#2d3748',
-    margin: 0,
-    marginBottom: '4px',
-  },
-  cardProject: {
-    fontSize: '13px',
-    color: '#718096',
-    margin: 0,
-    fontWeight: '500',
-  },
-  statusBadge: {
-    padding: '6px 14px',
-    borderRadius: '12px',
-    fontSize: '12px',
-    fontWeight: '600',
-    color: 'white',
-    textTransform: 'uppercase',
-  },
-  sprintNameBadge: {
-    padding: '4px 10px',
-    borderRadius: '8px',
-    fontSize: '11px',
-    fontWeight: '600',
-    backgroundColor: '#879BFF',
-    color: 'white',
-    alignSelf: 'flex-start',
-    marginTop: '2px',
-    maxWidth: '100%',
-    wordBreak: 'break-word',
-    lineHeight: '1.4',
-  },
-  description: {
-    fontSize: '14px',
-    color: '#718096',
-    marginBottom: '16px',
-    lineHeight: '1.6',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    display: '-webkit-box',
-    WebkitLineClamp: 2,
-    WebkitBoxOrient: 'vertical',
-  },
-  noDescription: {
-    fontSize: '14px',
-    color: '#a0aec0',
-    marginBottom: '16px',
-    fontStyle: 'italic',
-  },
-  cardMeta: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    borderTop: '1px solid #e2e8f0',
-    paddingTop: '16px',
-    gap: '16px',
-  },
-  cardMetaGrid: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '12px',
-    marginTop: 'auto',
-    paddingTop: '16px',
-  },
-  metaLeft: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '6px',
-    fontSize: '14px',
-    color: '#4a5568',
-  },
-  metaLeftGrid: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '6px',
-    fontSize: '14px',
-    color: '#4a5568',
-    paddingBottom: '12px',
-    borderBottom: '1px solid #e2e8f0',
-  },
-  metaItem: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-  },
-  cardActions: {
-    display: 'flex',
-    gap: '8px',
-    flexWrap: 'wrap',
-    alignItems: 'center',
-  },
-  cardActionsGrid: {
-    display: 'flex',
-    flexDirection: 'row',
-    gap: '8px',
-    width: '100%',
-    flexWrap: 'wrap',
-  },
-  actionButton: {
-    padding: '7px 14px',
-    border: '1px solid #667eea',
-    background: 'white',
-    color: '#667eea',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    fontSize: '13px',
-    fontWeight: '500',
-    transition: 'all 0.2s',
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  actionButtonGrid: {
-    padding: '9px 14px',
-    border: '1px solid #667eea',
-    background: 'white',
-    color: '#667eea',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    fontSize: '13px',
-    fontWeight: '500',
-    flex: '1',
-    transition: 'all 0.2s',
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sprintSelect: {
-    padding: '7px 14px',
-    border: '1px solid #879BFF',
-    background: 'white',
-    color: '#879BFF',
-    borderRadius: '6px',
-    fontSize: '13px',
-    fontWeight: '600',
-    cursor: 'pointer',
-    transition: 'all 0.2s',
-    outline: 'none',
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sprintSelectGrid: {
-    padding: '9px 14px',
-    border: '1px solid #879BFF',
-    background: 'white',
-    color: '#879BFF',
-    borderRadius: '6px',
-    fontSize: '13px',
-    fontWeight: '600',
-    cursor: 'pointer',
-    transition: 'all 0.2s',
-    outline: 'none',
-    flex: '1',
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  selectOption: {
-    padding: '10px 12px',
-    minHeight: '40px',
-    lineHeight: '1.5',
-  },
-  deleteButton: {
-    padding: '7px 14px',
-    border: '1px solid #f56565',
-    background: 'white',
-    color: '#f56565',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    fontSize: '13px',
-    fontWeight: '500',
-    transition: 'all 0.2s',
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  deleteButtonGrid: {
-    padding: '9px 14px',
-    border: '1px solid #f56565',
-    background: 'white',
-    color: '#f56565',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    fontSize: '13px',
-    fontWeight: '500',
-    flex: '1',
-    transition: 'all 0.2s',
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  removeSprintButton: {
-    padding: '7px 14px',
-    border: '1px solid #879BFF',
-    background: 'white',
-    color: '#879BFF',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    fontSize: '13px',
-    fontWeight: '500',
-    transition: 'all 0.2s',
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  removeSprintButtonGrid: {
-    padding: '9px 14px',
-    border: '1px solid #879BFF',
-    background: 'white',
-    color: '#879BFF',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    fontSize: '13px',
-    fontWeight: '500',
-    flex: '1',
-    transition: 'all 0.2s',
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
+    maxWidth: '1400px',
+    margin: '0 auto',
   },
   loading: {
     textAlign: 'center',
@@ -1392,13 +1080,425 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontSize: '18px',
     color: '#718096',
   },
-  empty: {
-    gridColumn: '1 / -1',
-    textAlign: 'center',
-    padding: '60px',
-    fontSize: '16px',
-    color: '#a0aec0',
+  // Header Section
+  headerSection: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: '24px',
   },
+  headerLeft: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '4px',
+  },
+  pageTitle: {
+    fontSize: '28px',
+    fontWeight: 700,
+    color: '#1f2937',
+    margin: 0,
+  },
+  pageSubtitle: {
+    fontSize: '14px',
+    color: '#6b7280',
+    margin: 0,
+  },
+  headerRight: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+  },
+  addButton: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '10px 20px',
+    background: 'linear-gradient(135deg, #879BFF 0%, #FF6495 100%)',
+    color: 'white',
+    border: 'none',
+    borderRadius: '8px',
+    fontSize: '14px',
+    fontWeight: 600,
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+  },
+  // Stats Row
+  statsRow: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(4, 1fr)',
+    gap: '16px',
+    marginBottom: '24px',
+  },
+  statCard: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '16px',
+    padding: '20px',
+    background: 'white',
+    borderRadius: '12px',
+    border: '1px solid #e5e7eb',
+  },
+  statIcon: {
+    width: '48px',
+    height: '48px',
+    borderRadius: '10px',
+    backgroundColor: '#F0F4FF',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statContent: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '2px',
+  },
+  statValue: {
+    fontSize: '24px',
+    fontWeight: 700,
+    color: '#1f2937',
+  },
+  statLabel: {
+    fontSize: '13px',
+    color: '#6b7280',
+  },
+  // Controls Row
+  controlsRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '20px',
+    flexWrap: 'wrap',
+    gap: '16px',
+  },
+  filterTabs: {
+    display: 'flex',
+    gap: '8px',
+    background: '#f3f4f6',
+    padding: '4px',
+    borderRadius: '10px',
+  },
+  filterTab: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '8px 16px',
+    border: 'none',
+    background: 'transparent',
+    borderRadius: '8px',
+    fontSize: '14px',
+    fontWeight: 500,
+    color: '#6b7280',
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+  },
+  filterTabActive: {
+    background: 'white',
+    color: '#1f2937',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+  },
+  tabCount: {
+    fontSize: '12px',
+    padding: '2px 8px',
+    borderRadius: '10px',
+    backgroundColor: '#e5e7eb',
+    color: '#4b5563',
+  },
+  rightControls: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+  },
+  viewToggle: {
+    display: 'flex',
+    gap: '4px',
+    background: '#f3f4f6',
+    padding: '4px',
+    borderRadius: '8px',
+  },
+  viewBtn: {
+    padding: '8px 10px',
+    border: 'none',
+    background: 'transparent',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    color: '#9ca3af',
+    transition: 'all 0.2s',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  viewBtnActive: {
+    background: 'white',
+    color: '#879BFF',
+    boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+  },
+  searchBox: {
+    position: 'relative',
+    width: '280px',
+  },
+  searchIcon: {
+    position: 'absolute',
+    left: '12px',
+    top: '50%',
+    transform: 'translateY(-50%)',
+    pointerEvents: 'none',
+  },
+  searchInput: {
+    width: '100%',
+    padding: '10px 36px',
+    border: '1px solid #e5e7eb',
+    borderRadius: '8px',
+    fontSize: '14px',
+    outline: 'none',
+    transition: 'all 0.2s',
+    boxSizing: 'border-box',
+  },
+  clearSearch: {
+    position: 'absolute',
+    right: '8px',
+    top: '50%',
+    transform: 'translateY(-50%)',
+    background: 'transparent',
+    border: 'none',
+    color: '#9ca3af',
+    cursor: 'pointer',
+    padding: '4px',
+    borderRadius: '4px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // Pagination
+  paginationRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '16px',
+  },
+  resultCount: {
+    fontSize: '14px',
+    color: '#6b7280',
+  },
+  paginationControls: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+  },
+  pageBtn: {
+    padding: '6px 10px',
+    border: '1px solid #e5e7eb',
+    background: 'white',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    color: '#4b5563',
+    transition: 'all 0.2s',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pageBtnDisabled: {
+    opacity: 0.4,
+    cursor: 'not-allowed',
+  },
+  pageInfo: {
+    fontSize: '14px',
+    color: '#4b5563',
+    fontWeight: 500,
+    minWidth: '60px',
+    textAlign: 'center',
+  },
+  // Views
+  listView: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '12px',
+  },
+  gridView: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))',
+    gap: '16px',
+  },
+  // Cards
+  listCard: {
+    position: 'relative',
+    background: 'white',
+    borderRadius: '12px',
+    border: '1px solid #e5e7eb',
+    overflow: 'hidden',
+    transition: 'all 0.2s',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+  },
+  gridCard: {
+    position: 'relative',
+    background: 'white',
+    borderRadius: '12px',
+    border: '1px solid #e5e7eb',
+    overflow: 'hidden',
+    transition: 'all 0.2s',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+    display: 'flex',
+    flexDirection: 'column',
+  },
+  priorityLine: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: '4px',
+  },
+  cardContent: {
+    padding: '20px',
+    paddingTop: '24px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '12px',
+  },
+  cardHeader: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+  },
+  cardTitleRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: '12px',
+  },
+  cardTitle: {
+    fontSize: '16px',
+    fontWeight: 600,
+    color: '#1f2937',
+    margin: 0,
+    flex: 1,
+  },
+  priorityBadge: {
+    padding: '4px 10px',
+    borderRadius: '6px',
+    fontSize: '11px',
+    fontWeight: 600,
+    textTransform: 'uppercase',
+    flexShrink: 0,
+  },
+  cardMeta: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    flexWrap: 'wrap',
+  },
+  projectTag: {
+    padding: '4px 10px',
+    background: '#F0F4FF',
+    color: '#879BFF',
+    borderRadius: '6px',
+    fontSize: '12px',
+    fontWeight: 500,
+  },
+  statusBadge: {
+    padding: '4px 10px',
+    borderRadius: '6px',
+    fontSize: '11px',
+    fontWeight: 600,
+  },
+  cardDescription: {
+    fontSize: '14px',
+    color: '#6b7280',
+    lineHeight: 1.5,
+    margin: 0,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    display: '-webkit-box',
+    WebkitLineClamp: 2,
+    WebkitBoxOrient: 'vertical',
+  },
+  sprintRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+  },
+  sprintName: {
+    fontSize: '13px',
+    color: '#879BFF',
+    fontWeight: 500,
+  },
+  assigneeRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    paddingTop: '8px',
+    borderTop: '1px solid #f3f4f6',
+  },
+  avatar: {
+    width: '32px',
+    height: '32px',
+    borderRadius: '50%',
+    background: 'linear-gradient(135deg, #879BFF 0%, #FF6495 100%)',
+    color: 'white',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '13px',
+    fontWeight: 600,
+  },
+  assigneeName: {
+    fontSize: '14px',
+    color: '#4b5563',
+  },
+  cardActions: {
+    display: 'flex',
+    gap: '8px',
+    flexWrap: 'wrap',
+    paddingTop: '12px',
+    borderTop: '1px solid #f3f4f6',
+  },
+  actionBtn: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    padding: '6px 12px',
+    border: '1px solid #879BFF',
+    background: 'white',
+    color: '#879BFF',
+    borderRadius: '6px',
+    fontSize: '12px',
+    fontWeight: 500,
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+  },
+  actionBtnSecondary: {
+    borderColor: '#9ca3af',
+    color: '#6b7280',
+  },
+  actionBtnEdit: {
+    borderColor: '#879BFF',
+    color: '#879BFF',
+  },
+  actionBtnDelete: {
+    borderColor: '#ef4444',
+    color: '#ef4444',
+  },
+  // Empty State
+  emptyState: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '60px 20px',
+    background: 'white',
+    borderRadius: '12px',
+    border: '1px solid #e5e7eb',
+  },
+  emptyText: {
+    fontSize: '18px',
+    fontWeight: 600,
+    color: '#4b5563',
+    margin: '16px 0 4px',
+  },
+  emptySubtext: {
+    fontSize: '14px',
+    color: '#9ca3af',
+    margin: 0,
+  },
+  // Modal
   modalOverlay: {
     position: 'fixed',
     top: 0,
@@ -1413,20 +1513,42 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   modal: {
     background: 'white',
-    borderRadius: '12px',
-    padding: '32px',
+    borderRadius: '16px',
     width: '90%',
-    maxWidth: '600px',
+    maxWidth: '560px',
     maxHeight: '90vh',
     overflowY: 'auto',
   },
+  modalHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    padding: '24px 24px 0',
+  },
   modalTitle: {
-    fontSize: '24px',
-    fontWeight: '600',
-    marginBottom: '24px',
-    color: '#2d3748',
+    fontSize: '20px',
+    fontWeight: 600,
+    color: '#1f2937',
+    margin: 0,
+  },
+  modalSubtitle: {
+    fontSize: '14px',
+    color: '#6b7280',
+    margin: '4px 0 0',
+  },
+  modalClose: {
+    background: 'transparent',
+    border: 'none',
+    color: '#9ca3af',
+    cursor: 'pointer',
+    padding: '4px',
+    borderRadius: '6px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   form: {
+    padding: '24px',
     display: 'flex',
     flexDirection: 'column',
     gap: '20px',
@@ -1434,7 +1556,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   formGroup: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '8px',
+    gap: '6px',
   },
   formRow: {
     display: 'grid',
@@ -1442,363 +1564,273 @@ const styles: { [key: string]: React.CSSProperties } = {
     gap: '16px',
   },
   label: {
-    fontSize: '14px',
-    fontWeight: '600',
-    color: '#4a5568',
+    fontSize: '11px',
+    fontWeight: 600,
+    color: '#6b7280',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px',
   },
   input: {
-    padding: '10px 12px',
-    border: '1px solid #e2e8f0',
-    borderRadius: '6px',
+    padding: '12px 14px',
+    border: '1px solid #e5e7eb',
+    borderRadius: '8px',
     fontSize: '14px',
     outline: 'none',
-    transition: 'border-color 0.2s',
+    transition: 'all 0.2s',
+    width: '100%',
+    boxSizing: 'border-box',
   },
   textarea: {
-    padding: '10px 12px',
-    border: '1px solid #e2e8f0',
-    borderRadius: '6px',
+    padding: '12px 14px',
+    border: '1px solid #e5e7eb',
+    borderRadius: '8px',
     fontSize: '14px',
     outline: 'none',
     resize: 'vertical',
     fontFamily: 'inherit',
   },
-  helpText: {
-    fontSize: '12px',
-    color: '#718096',
-    marginTop: '4px',
-  },
-  backToSelectButton: {
-    marginTop: '8px',
-    padding: '8px 12px',
-    border: '1px solid #e2e8f0',
+  select: {
+    padding: '12px 14px',
+    border: '1px solid #e5e7eb',
+    borderRadius: '8px',
+    fontSize: '14px',
+    outline: 'none',
     background: 'white',
-    color: '#667eea',
-    borderRadius: '6px',
-    fontSize: '13px',
-    fontWeight: '500',
     cursor: 'pointer',
-    transition: 'all 0.2s',
   },
-  searchableDropdown: {
+  dropdown: {
     position: 'absolute',
     top: '100%',
     left: 0,
     right: 0,
     background: 'white',
-    border: '1px solid #e2e8f0',
-    borderRadius: '6px',
+    border: '1px solid #e5e7eb',
+    borderRadius: '8px',
     marginTop: '4px',
     maxHeight: '200px',
     overflowY: 'auto',
     zIndex: 1000,
-    boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
   },
   dropdownItem: {
-    padding: '10px 12px',
+    padding: '12px 14px',
     cursor: 'pointer',
-    transition: 'background-color 0.2s',
     fontSize: '14px',
+    transition: 'background-color 0.2s',
+  },
+  backBtn: {
+    padding: '10px 16px',
+    border: '1px solid #e5e7eb',
+    background: 'white',
+    color: '#6b7280',
+    borderRadius: '8px',
+    fontSize: '14px',
+    fontWeight: 500,
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
   },
   formActions: {
     display: 'flex',
     gap: '12px',
     justifyContent: 'flex-end',
-    marginTop: '8px',
+    paddingTop: '8px',
   },
-  secondaryButton: {
+  cancelBtn: {
     padding: '12px 24px',
-    border: '1px solid #e2e8f0',
+    border: '1px solid #e5e7eb',
     background: 'white',
-    color: '#4a5568',
+    color: '#4b5563',
     borderRadius: '8px',
     fontSize: '14px',
-    fontWeight: '600',
+    fontWeight: 600,
     cursor: 'pointer',
   },
-  successModalOverlay: {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    display: 'flex',
-    alignItems: 'flex-start',
-    justifyContent: 'center',
-    zIndex: 2000,
-    paddingTop: '100px',
-    pointerEvents: 'none',
-  },
-  successModal: {
-    background: 'linear-gradient(135deg, #48bb78 0%, #38a169 100%)',
-    color: 'white',
-    padding: '24px 32px',
-    borderRadius: '12px',
-    boxShadow: '0 10px 40px rgba(72, 187, 120, 0.4)',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '16px',
-    animation: 'slideDown 0.3s ease-out',
-    pointerEvents: 'auto',
-  },
-  successIcon: {
-    fontSize: '32px',
-    fontWeight: 'bold',
-    background: 'white',
-    color: '#48bb78',
-    width: '48px',
-    height: '48px',
-    borderRadius: '50%',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  successMessage: {
-    fontSize: '16px',
-    fontWeight: '600',
-    margin: 0,
-  },
-  paginationContainer: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    gap: '8px',
-    marginBottom: '20px',
-  },
-  paginationButton: {
-    padding: '6px 12px',
-    border: '1px solid #e2e8f0',
-    background: 'white',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    fontSize: '16px',
-    color: '#4a5568',
-    transition: 'all 0.2s',
-    fontWeight: '600',
-    minWidth: '36px',
-  },
-  paginationButtonDisabled: {
-    opacity: 0.3,
-    cursor: 'not-allowed',
-  },
-  paginationInfo: {
-    fontSize: '14px',
-    color: '#4a5568',
-    fontWeight: '500',
-    padding: '0 4px',
-  },
-  confirmModal: {
-    background: 'white',
-    borderRadius: '12px',
-    padding: '32px',
-    width: '90%',
-    maxWidth: '480px',
-    textAlign: 'center',
-  },
-  confirmModalTitle: {
-    fontSize: '22px',
-    fontWeight: '600',
-    marginBottom: '16px',
-    color: '#2d3748',
-  },
-  confirmModalMessage: {
-    fontSize: '16px',
-    color: '#4a5568',
-    marginBottom: '28px',
-    lineHeight: '1.6',
-  },
-  confirmModalActions: {
-    display: 'flex',
-    gap: '12px',
-    justifyContent: 'center',
-  },
-  confirmButton: {
-    padding: '12px 28px',
-    background: '#f56565',
+  submitBtn: {
+    padding: '12px 24px',
+    background: 'linear-gradient(135deg, #879BFF 0%, #FF6495 100%)',
     color: 'white',
     border: 'none',
     borderRadius: '8px',
     fontSize: '14px',
-    fontWeight: '600',
-    cursor: 'pointer',
-    transition: 'transform 0.2s',
-  },
-  cancelButton: {
-    padding: '12px 28px',
-    border: '1px solid #e2e8f0',
-    background: 'white',
-    color: '#4a5568',
-    borderRadius: '8px',
-    fontSize: '14px',
-    fontWeight: '600',
+    fontWeight: 600,
     cursor: 'pointer',
   },
-  warningModal: {
+  submitBtnDisabled: {
+    opacity: 0.5,
+    cursor: 'not-allowed',
+  },
+  // Confirm Modal
+  confirmModal: {
     background: 'white',
-    borderRadius: '12px',
+    borderRadius: '16px',
     padding: '32px',
     width: '90%',
-    maxWidth: '480px',
+    maxWidth: '420px',
     textAlign: 'center',
   },
   warningIcon: {
-    fontSize: '48px',
-    color: '#ed8936',
     marginBottom: '16px',
   },
-  warningModalTitle: {
-    fontSize: '22px',
-    fontWeight: '600',
-    marginBottom: '16px',
-    color: '#2d3748',
+  confirmTitle: {
+    fontSize: '20px',
+    fontWeight: 600,
+    color: '#1f2937',
+    margin: '0 0 12px',
   },
-  warningModalMessage: {
-    fontSize: '16px',
-    color: '#4a5568',
-    marginBottom: '28px',
-    lineHeight: '1.6',
+  confirmText: {
+    fontSize: '14px',
+    color: '#6b7280',
+    lineHeight: 1.6,
+    margin: '0 0 24px',
   },
-  addToSprintModal: {
+  confirmActions: {
+    display: 'flex',
+    gap: '12px',
+    justifyContent: 'center',
+  },
+  confirmOkBtn: {
+    padding: '12px 32px',
+    background: '#879BFF',
+    color: 'white',
+    border: 'none',
+    borderRadius: '8px',
+    fontSize: '14px',
+    fontWeight: 600,
+    cursor: 'pointer',
+  },
+  confirmRemoveBtn: {
+    padding: '12px 24px',
+    background: '#ef4444',
+    color: 'white',
+    border: 'none',
+    borderRadius: '8px',
+    fontSize: '14px',
+    fontWeight: 600,
+    cursor: 'pointer',
+  },
+  // Sprint Modal
+  sprintModal: {
     background: 'white',
-    borderRadius: '12px',
-    padding: '32px',
+    borderRadius: '16px',
     width: '90%',
-    maxWidth: '540px',
+    maxWidth: '520px',
     maxHeight: '80vh',
     overflowY: 'auto',
   },
-  addToSprintModalTitle: {
-    fontSize: '24px',
-    fontWeight: '600',
-    marginBottom: '8px',
-    color: '#2d3748',
-  },
-  addToSprintModalSubtitle: {
-    fontSize: '14px',
-    color: '#718096',
-    marginBottom: '20px',
-  },
-  sprintSearchContainer: {
+  sprintSearch: {
     position: 'relative',
-    marginBottom: '20px',
+    padding: '0 24px',
+    marginBottom: '16px',
   },
   sprintSearchIcon: {
     position: 'absolute',
-    left: '12px',
+    left: '36px',
     top: '50%',
     transform: 'translateY(-50%)',
-    color: '#a0aec0',
-    pointerEvents: 'none' as const,
+    pointerEvents: 'none',
   },
   sprintSearchInput: {
     width: '100%',
-    padding: '10px 40px 10px 36px',
-    border: '2px solid #e2e8f0',
+    padding: '12px 14px 12px 40px',
+    border: '1px solid #e5e7eb',
     borderRadius: '8px',
     fontSize: '14px',
     outline: 'none',
-    transition: 'border-color 0.2s',
-    fontFamily: 'inherit',
     boxSizing: 'border-box',
   },
-  clearSprintSearchButton: {
-    position: 'absolute',
-    right: '12px',
-    top: '50%',
-    transform: 'translateY(-50%)',
-    background: 'transparent',
-    border: 'none',
-    color: '#a0aec0',
-    fontSize: '18px',
-    cursor: 'pointer',
-    padding: '4px 8px',
-    borderRadius: '4px',
-    transition: 'all 0.2s',
-  },
-  sprintsList: {
+  sprintList: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '12px',
-    marginBottom: '24px',
-    maxHeight: '400px',
+    gap: '8px',
+    padding: '0 24px',
+    maxHeight: '320px',
     overflowY: 'auto',
-    padding: '4px',
   },
-  sprintRadioLabel: {
+  sprintOption: {
     display: 'flex',
     alignItems: 'flex-start',
     gap: '12px',
-    padding: '16px',
-    background: 'white',
-    borderRadius: '8px',
+    padding: '14px',
+    border: '2px solid #e5e7eb',
+    borderRadius: '10px',
     cursor: 'pointer',
     transition: 'all 0.2s',
-    border: '2px solid #e2e8f0',
   },
-  sprintRadioLabelSelected: {
+  sprintOptionSelected: {
     borderColor: '#879BFF',
-    backgroundColor: '#F0F4FF',
-    boxShadow: '0 2px 8px rgba(135, 155, 255, 0.15)',
+    background: '#F0F4FF',
   },
   radioInput: {
     width: '18px',
     height: '18px',
     cursor: 'pointer',
     marginTop: '2px',
-    flexShrink: 0,
     accentColor: '#879BFF',
   },
   sprintOptionContent: {
     flex: 1,
     display: 'flex',
     flexDirection: 'column',
-    gap: '8px',
+    gap: '4px',
   },
   sprintOptionHeader: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    gap: '12px',
   },
   sprintOptionName: {
-    fontSize: '16px',
-    fontWeight: '600',
-    color: '#2d3748',
+    fontSize: '15px',
+    fontWeight: 600,
+    color: '#1f2937',
   },
   sprintStatusBadge: {
-    padding: '4px 10px',
-    borderRadius: '10px',
-    fontSize: '11px',
-    fontWeight: '600',
+    padding: '3px 8px',
+    borderRadius: '6px',
+    fontSize: '10px',
+    fontWeight: 600,
     color: 'white',
     textTransform: 'uppercase',
   },
-  sprintOptionMeta: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px',
+  sprintDates: {
     fontSize: '13px',
-    color: '#718096',
+    color: '#6b7280',
   },
-  sprintMetaItem: {
-    display: 'flex',
-    alignItems: 'center',
-  },
-  noSprintsText: {
+  noSprints: {
     textAlign: 'center',
     padding: '32px',
-    color: '#a0aec0',
+    color: '#9ca3af',
     fontSize: '14px',
   },
-  addToSprintModalActions: {
+  sprintModalActions: {
     display: 'flex',
     gap: '12px',
     justifyContent: 'flex-end',
-    paddingTop: '16px',
-    borderTop: '1px solid #e2e8f0',
+    padding: '24px',
+    borderTop: '1px solid #f3f4f6',
   },
-  primaryButtonDisabled: {
-    opacity: 0.5,
-    cursor: 'not-allowed',
+  // Success Toast
+  successToast: {
+    position: 'fixed',
+    top: '24px',
+    right: '24px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    padding: '16px 24px',
+    background: 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)',
+    color: 'white',
+    borderRadius: '12px',
+    boxShadow: '0 8px 24px rgba(22, 163, 74, 0.3)',
+    zIndex: 2000,
+    animation: 'slideIn 0.3s ease-out',
+  },
+  successIcon: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  successText: {
+    fontSize: '14px',
+    fontWeight: 600,
   },
 };

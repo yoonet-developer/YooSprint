@@ -92,6 +92,17 @@ const getDocumentIcon = (type: string) => {
   }
 };
 
+const getTypeColor = (type: string) => {
+  switch (type) {
+    case 'figma': return { color: '#a259ff', bg: '#f5f0ff' };
+    case 'word': return { color: '#2b579a', bg: '#e8f0fe' };
+    case 'qa': return { color: '#16a34a', bg: '#dcfce7' };
+    case 'spreadsheet': return { color: '#0f9d58', bg: '#e6f4ea' };
+    case 'website': return { color: '#879BFF', bg: '#E8ECFF' };
+    default: return { color: '#6b7280', bg: '#f3f4f6' };
+  }
+};
+
 export default function FileManagementPage() {
   const [folders, setFolders] = useState<FileFolder[]>([]);
   const [loading, setLoading] = useState(true);
@@ -107,14 +118,16 @@ export default function FileManagementPage() {
   const [documentTitle, setDocumentTitle] = useState('');
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [filterType, setFilterType] = useState<string>('');
-  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [filterType, setFilterType] = useState<string>('all');
+  const [showSuccessToast, setShowSuccessToast] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingDocument, setEditingDocument] = useState<FileDocument | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<{ type: 'folder' | 'document'; id: string; name: string } | null>(null);
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+
 
   const fetchFolders = useCallback(async () => {
     try {
@@ -140,10 +153,17 @@ export default function FileManagementPage() {
       const matchesSearch = !searchQuery ||
         doc.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
         doc.link.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesType = !filterType || doc.type === filterType;
+      const matchesType = filterType === 'all' || doc.type === filterType;
       return matchesSearch && matchesType;
     });
   }, [selectedFolder, searchQuery, filterType]);
+
+  // Get document type counts for filter badges
+  const getTypeCount = (typeValue: string) => {
+    if (!selectedFolder) return 0;
+    if (typeValue === 'all') return selectedFolder.documents.length;
+    return selectedFolder.documents.filter(d => d.type === typeValue).length;
+  };
 
   const getTypeInfo = (typeValue: string) => {
     return documentTypes.find((t) => t.value === typeValue);
@@ -160,7 +180,7 @@ export default function FileManagementPage() {
     setSelectedFolderId(null);
     resetDocumentForm();
     setSearchQuery('');
-    setFilterType('');
+    setFilterType('all');
     setShowAddModal(false);
   };
 
@@ -178,6 +198,7 @@ export default function FileManagementPage() {
           body: JSON.stringify({ name: editingFolderName.trim() }),
         });
         await fetchFolders();
+        showSuccess('Folder renamed successfully');
       } catch (error) {
         console.error('Failed to update folder:', error);
       }
@@ -205,6 +226,7 @@ export default function FileManagementPage() {
         await fetchFolders();
         setNewFolderName('');
         setShowNewFolderInput(false);
+        showSuccess('Folder created successfully');
       } catch (error) {
         console.error('Failed to create folder:', error);
       }
@@ -237,9 +259,7 @@ export default function FileManagementPage() {
       }
       await fetchFolders();
       handleCloseDeleteModal();
-      setSuccessMessage(deleteTarget.type === 'folder' ? 'Folder deleted successfully!' : 'Document deleted successfully!');
-      setShowSuccessModal(true);
-      setTimeout(() => setShowSuccessModal(false), 2000);
+      showSuccess(deleteTarget.type === 'folder' ? 'Folder deleted successfully' : 'Document deleted successfully');
     } catch (error) {
       console.error('Failed to delete:', error);
     }
@@ -265,6 +285,12 @@ export default function FileManagementPage() {
     resetDocumentForm();
   };
 
+  const showSuccess = (message: string) => {
+    setSuccessMessage(message);
+    setShowSuccessToast(true);
+    setTimeout(() => setShowSuccessToast(false), 3000);
+  };
+
   const handleDetailsSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (documentLink.trim() && documentTitle.trim() && selectedType) {
@@ -286,13 +312,8 @@ export default function FileManagementPage() {
 
         await fetchFolders();
         setShowAddModal(false);
-        setSuccessMessage('Document added successfully!');
-        setShowSuccessModal(true);
+        showSuccess('Document added successfully');
         resetDocumentForm();
-
-        setTimeout(() => {
-          setShowSuccessModal(false);
-        }, 2000);
       } catch (error) {
         console.error('Failed to add document:', error);
       }
@@ -334,9 +355,7 @@ export default function FileManagementPage() {
 
       await fetchFolders();
       handleCloseEditModal();
-      setSuccessMessage('Document updated successfully!');
-      setShowSuccessModal(true);
-      setTimeout(() => setShowSuccessModal(false), 2000);
+      showSuccess('Document updated successfully');
     } catch (error) {
       console.error('Failed to update document:', error);
     }
@@ -347,23 +366,46 @@ export default function FileManagementPage() {
     return (
       <AppLayout>
         <div style={styles.container}>
+          {/* Header */}
           <div style={styles.header}>
             <div>
               <h1 style={styles.title}>File Management</h1>
               <p style={styles.subtitle}>Organize and manage your project documents</p>
             </div>
+            <button
+              onClick={() => setShowNewFolderInput(true)}
+              style={styles.addButton}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="12" y1="5" x2="12" y2="19"/>
+                <line x1="5" y1="12" x2="19" y2="12"/>
+              </svg>
+              New Folder
+            </button>
           </div>
 
           {loading ? (
-            <div style={styles.loadingState}>
-              <p>Loading folders...</p>
-            </div>
+            <div style={styles.loadingState}>Loading folders...</div>
           ) : (
             <div style={styles.foldersGrid}>
               {folders.map((folder) => {
                 const folderId = folder._id || folder.id || '';
                 return (
-                  <div key={folderId} style={styles.folderCard}>
+                  <div
+                    key={folderId}
+                    style={styles.folderCard}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.borderColor = '#879BFF';
+                      e.currentTarget.style.boxShadow = '0 4px 12px rgba(135, 155, 255, 0.15)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.borderColor = '#e2e8f0';
+                      e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.08)';
+                    }}
+                  >
+                    {/* Color indicator line */}
+                    <div style={{ ...styles.folderColorLine, backgroundColor: folder.color }} />
+
                     {editingFolderId === folderId ? (
                       <div style={styles.editRow}>
                         <input
@@ -378,21 +420,12 @@ export default function FileManagementPage() {
                           }}
                         />
                         <div style={styles.editActions}>
-                          <button onClick={() => handleSaveFolderName(folderId)} style={styles.iconBtn} title="Save">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#48bb78" strokeWidth="2">
-                              <polyline points="20 6 9 17 4 12"/>
-                            </svg>
-                          </button>
-                          <button onClick={handleCancelEditFolder} style={styles.iconBtn} title="Cancel">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#f56565" strokeWidth="2">
-                              <line x1="18" y1="6" x2="6" y2="18"/>
-                              <line x1="6" y1="6" x2="18" y2="18"/>
-                            </svg>
-                          </button>
+                          <button onClick={() => handleSaveFolderName(folderId)} style={styles.saveBtn}>Save</button>
+                          <button onClick={handleCancelEditFolder} style={styles.cancelBtn}>Cancel</button>
                         </div>
                       </div>
                     ) : (
-                      <>
+                      <div style={styles.folderCardBody}>
                         <div
                           style={styles.folderCardContent}
                           onClick={() => handleSelectFolder(folder)}
@@ -437,13 +470,13 @@ export default function FileManagementPage() {
                             </svg>
                           </button>
                         </div>
-                      </>
+                      </div>
                     )}
                   </div>
                 );
               })}
 
-              {/* Add New Folder Card */}
+              {/* New Folder Card */}
               {showNewFolderInput ? (
                 <div style={styles.newFolderCard}>
                   <input
@@ -474,17 +507,18 @@ export default function FileManagementPage() {
                     </button>
                   </div>
                 </div>
-              ) : (
-                <button
-                  onClick={() => setShowNewFolderInput(true)}
-                  style={styles.addFolderCard}
-                >
-                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2">
-                    <line x1="12" y1="5" x2="12" y2="19"/>
-                    <line x1="5" y1="12" x2="19" y2="12"/>
-                  </svg>
-                  <span style={styles.addFolderText}>New Folder</span>
-                </button>
+              ) : folders.length === 0 && (
+                <div style={styles.emptyFolderState}>
+                  <div style={styles.emptyIcon}>
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" strokeWidth="1.5">
+                      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                      <line x1="12" y1="11" x2="12" y2="17"/>
+                      <line x1="9" y1="14" x2="15" y2="14"/>
+                    </svg>
+                  </div>
+                  <p style={styles.emptyText}>No folders yet</p>
+                  <p style={styles.emptySubtext}>Create your first folder to get started</p>
+                </div>
               )}
             </div>
           )}
@@ -493,12 +527,16 @@ export default function FileManagementPage() {
           {showDeleteModal && deleteTarget && (
             <div style={styles.modalOverlay} onClick={handleCloseDeleteModal}>
               <div style={styles.deleteModal} onClick={(e) => e.stopPropagation()}>
+                <button onClick={handleCloseDeleteModal} style={styles.modalCloseBtn}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <line x1="18" y1="6" x2="6" y2="18"/>
+                    <line x1="6" y1="6" x2="18" y2="18"/>
+                  </svg>
+                </button>
                 <div style={styles.deleteIconWrapper}>
-                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#f56565" strokeWidth="2">
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2">
                     <polyline points="3 6 5 6 21 6"/>
                     <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
-                    <line x1="10" y1="11" x2="10" y2="17"/>
-                    <line x1="14" y1="11" x2="14" y2="17"/>
                   </svg>
                 </div>
                 <h3 style={styles.deleteTitle}>Delete Folder</h3>
@@ -506,29 +544,23 @@ export default function FileManagementPage() {
                   Are you sure you want to delete <strong>"{deleteTarget.name}"</strong>?
                   This will also delete all documents inside.
                 </p>
-                <p style={styles.deleteWarning}>This action cannot be undone.</p>
                 <div style={styles.deleteActions}>
-                  <button onClick={handleCloseDeleteModal} style={styles.btnSecondary}>
-                    Cancel
-                  </button>
-                  <button onClick={handleConfirmDelete} style={styles.btnDanger}>
-                    Delete
-                  </button>
+                  <button onClick={handleCloseDeleteModal} style={styles.btnSecondary}>Cancel</button>
+                  <button onClick={handleConfirmDelete} style={styles.btnDanger}>Delete</button>
                 </div>
               </div>
             </div>
           )}
 
-          {/* Success Modal */}
-          {showSuccessModal && (
-            <div style={styles.modalOverlay} onClick={() => setShowSuccessModal(false)}>
-              <div style={styles.successModal} onClick={(e) => e.stopPropagation()}>
-                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#48bb78" strokeWidth="2">
-                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
-                  <polyline points="22 4 12 14.01 9 11.01"/>
+          {/* Success Toast */}
+          {showSuccessToast && (
+            <div style={styles.successToast}>
+              <div style={styles.successToastIcon}>
+                <svg width="20" height="20" fill="white" viewBox="0 0 16 16">
+                  <path d="M12.736 3.97a.733.733 0 0 1 1.047 0c.286.289.29.756.01 1.05L7.88 12.01a.733.733 0 0 1-1.065.02L3.217 8.384a.757.757 0 0 1 0-1.06.733.733 0 0 1 1.047 0l3.052 3.093 5.4-6.425z"/>
                 </svg>
-                <p style={styles.successText}>{successMessage || 'Success!'}</p>
               </div>
+              <span style={styles.successToastText}>{successMessage}</span>
             </div>
           )}
         </div>
@@ -540,23 +572,234 @@ export default function FileManagementPage() {
   return (
     <AppLayout>
       <div style={styles.container}>
-        <div style={styles.headerDetail}>
+        {/* Header */}
+        <div style={styles.detailHeader}>
           <button onClick={handleBackToFolders} style={styles.backBtn}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <line x1="19" y1="12" x2="5" y2="12"/>
               <polyline points="12 19 5 12 12 5"/>
             </svg>
-            <span>All Folders</span>
+            All Folders
           </button>
-          <div style={styles.folderHeader}>
+          <div style={styles.folderTitleRow}>
             <div style={{ ...styles.folderIconLarge, background: selectedFolder?.color }}>
               <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
                 <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
               </svg>
             </div>
-            <h1 style={styles.folderTitleLarge}>{selectedFolder?.name}</h1>
+            <div>
+              <h1 style={styles.folderTitleLarge}>{selectedFolder?.name}</h1>
+              <p style={styles.folderSubtitle}>{selectedFolder?.documents.length || 0} documents in this folder</p>
+            </div>
           </div>
         </div>
+
+        {/* Controls Row */}
+        <div style={styles.controlsRow}>
+          <div style={styles.filterTabs}>
+            <button
+              style={{
+                ...styles.filterTab,
+                ...(filterType === 'all' ? styles.filterTabActive : {}),
+              }}
+              onClick={() => setFilterType('all')}
+            >
+              All
+              <span style={{
+                ...styles.filterBadge,
+                ...(filterType === 'all' ? styles.filterBadgeActive : {}),
+              }}>
+                {getTypeCount('all')}
+              </span>
+            </button>
+            {documentTypes.map(type => (
+              <button
+                key={type.value}
+                style={{
+                  ...styles.filterTab,
+                  ...(filterType === type.value ? styles.filterTabActive : {}),
+                }}
+                onClick={() => setFilterType(type.value)}
+              >
+                {type.label}
+                <span style={{
+                  ...styles.filterBadge,
+                  ...(filterType === type.value ? styles.filterBadgeActive : {}),
+                }}>
+                  {getTypeCount(type.value)}
+                </span>
+              </button>
+            ))}
+          </div>
+
+          <div style={styles.rightControls}>
+            <div style={styles.viewToggle}>
+              <button
+                style={{
+                  ...styles.viewButton,
+                  ...(viewMode === 'grid' ? styles.viewButtonActive : {}),
+                }}
+                onClick={() => setViewMode('grid')}
+                title="Grid View"
+              >
+                <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                  <path d="M1 2.5A1.5 1.5 0 0 1 2.5 1h3A1.5 1.5 0 0 1 7 2.5v3A1.5 1.5 0 0 1 5.5 7h-3A1.5 1.5 0 0 1 1 5.5zm8 0A1.5 1.5 0 0 1 10.5 1h3A1.5 1.5 0 0 1 15 2.5v3A1.5 1.5 0 0 1 13.5 7h-3A1.5 1.5 0 0 1 9 5.5zM1 10.5A1.5 1.5 0 0 1 2.5 9h3A1.5 1.5 0 0 1 7 10.5v3A1.5 1.5 0 0 1 5.5 15h-3A1.5 1.5 0 0 1 1 13.5zm8 0A1.5 1.5 0 0 1 10.5 9h3a1.5 1.5 0 0 1 1.5 1.5v3a1.5 1.5 0 0 1-1.5 1.5h-3A1.5 1.5 0 0 1 9 13.5z"/>
+                </svg>
+              </button>
+              <button
+                style={{
+                  ...styles.viewButton,
+                  ...(viewMode === 'list' ? styles.viewButtonActive : {}),
+                }}
+                onClick={() => setViewMode('list')}
+                title="List View"
+              >
+                <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                  <path fillRule="evenodd" d="M2.5 12a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5m0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5m0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5"/>
+                </svg>
+              </button>
+            </div>
+
+            <div style={styles.searchContainer}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2" style={styles.searchIcon}>
+                <circle cx="11" cy="11" r="8"/>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+              </svg>
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search documents..."
+                style={styles.searchInput}
+              />
+              {searchQuery && (
+                <button onClick={() => setSearchQuery('')} style={styles.clearSearchBtn}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <line x1="18" y1="6" x2="6" y2="18"/>
+                    <line x1="6" y1="6" x2="18" y2="18"/>
+                  </svg>
+                </button>
+              )}
+            </div>
+
+            <button onClick={handleOpenAddModal} style={styles.addButton}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="12" y1="5" x2="12" y2="19"/>
+                <line x1="5" y1="12" x2="19" y2="12"/>
+              </svg>
+              Add Document
+            </button>
+          </div>
+        </div>
+
+        {/* Pagination Info */}
+        <div style={styles.paginationRow}>
+          <span style={styles.paginationText}>
+            Showing {filteredDocuments.length} of {selectedFolder?.documents.length || 0} documents
+          </span>
+        </div>
+
+        {/* Documents Grid */}
+        {(selectedFolder?.documents.length || 0) === 0 ? (
+          <div style={styles.emptyState}>
+            <div style={styles.emptyIcon}>
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" strokeWidth="1.5">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14,2 14,8 20,8"/>
+                <line x1="12" y1="12" x2="12" y2="18"/>
+                <line x1="9" y1="15" x2="15" y2="15"/>
+              </svg>
+            </div>
+            <p style={styles.emptyText}>No documents yet</p>
+            <p style={styles.emptySubtext}>Add your first document to get started</p>
+            <button onClick={handleOpenAddModal} style={styles.addButton}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="12" y1="5" x2="12" y2="19"/>
+                <line x1="5" y1="12" x2="19" y2="12"/>
+              </svg>
+              Add Document
+            </button>
+          </div>
+        ) : filteredDocuments.length === 0 ? (
+          <div style={styles.emptyState}>
+            <p style={styles.emptyText}>No documents found</p>
+            <p style={styles.emptySubtext}>Try adjusting your search or filter</p>
+          </div>
+        ) : (
+          <div style={viewMode === 'grid' ? styles.docGrid : styles.docList}>
+            {filteredDocuments.map((doc) => {
+              const docId = doc._id || doc.id || '';
+              const typeColor = getTypeColor(doc.type);
+
+              return (
+                <div
+                  key={docId}
+                  style={viewMode === 'grid' ? styles.docCard : styles.docCardList}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = '#879BFF';
+                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(135, 155, 255, 0.15)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = '#e2e8f0';
+                    e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.08)';
+                  }}
+                >
+                  {/* Type indicator line */}
+                  <div style={{ ...styles.docTypeLine, backgroundColor: typeColor.color }} />
+
+                  <div style={styles.docCardBody}>
+                    <div style={styles.docCardHeader}>
+                      <div style={{ ...styles.docIcon, background: typeColor.bg, color: typeColor.color }}>
+                        {getDocumentIcon(doc.type)}
+                      </div>
+                      <span style={{ ...styles.docTypeBadge, color: typeColor.color, background: typeColor.bg }}>
+                        {doc.typeLabel}
+                      </span>
+                      <div style={styles.docActions}>
+                        <button
+                          onClick={() => handleOpenEditModal(doc)}
+                          style={styles.docActionBtn}
+                          title="Edit"
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                          </svg>
+                        </button>
+                        <button
+                          onClick={() => handleOpenDeleteModal('document', docId, doc.title)}
+                          style={styles.docActionBtnDanger}
+                          title="Delete"
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <polyline points="3 6 5 6 21 6"/>
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+
+                    <h3 style={styles.docTitle}>{doc.title}</h3>
+
+                    <a
+                      href={doc.link}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={styles.docLink}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                        <polyline points="15 3 21 3 21 9"/>
+                        <line x1="10" y1="14" x2="21" y2="3"/>
+                      </svg>
+                      <span>{doc.link.length > 40 ? doc.link.substring(0, 40) + '...' : doc.link}</span>
+                    </a>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         {/* Add Document Modal */}
         {showAddModal && (
@@ -564,7 +807,7 @@ export default function FileManagementPage() {
             <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
               <div style={styles.modalHeader}>
                 <h2 style={styles.modalTitle}>Add Document</h2>
-                <button onClick={handleCloseAddModal} style={styles.closeModalBtn}>
+                <button onClick={handleCloseAddModal} style={styles.modalCloseBtn}>
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <line x1="18" y1="6" x2="6" y2="18"/>
                     <line x1="6" y1="6" x2="18" y2="18"/>
@@ -574,7 +817,7 @@ export default function FileManagementPage() {
 
               <form onSubmit={handleDetailsSubmit} style={styles.modalForm}>
                 <div style={styles.formGroup}>
-                  <label style={styles.label}>Document Type</label>
+                  <label style={styles.label}>DOCUMENT TYPE</label>
                   <div style={styles.typeGrid}>
                     {documentTypes.map((type) => (
                       <button
@@ -594,7 +837,7 @@ export default function FileManagementPage() {
                 </div>
 
                 <div style={styles.formGroup}>
-                  <label style={styles.label}>Title</label>
+                  <label style={styles.label}>TITLE</label>
                   <input
                     type="text"
                     value={documentTitle}
@@ -606,7 +849,7 @@ export default function FileManagementPage() {
                 </div>
 
                 <div style={styles.formGroup}>
-                  <label style={styles.label}>Link</label>
+                  <label style={styles.label}>LINK</label>
                   <div style={styles.inputGroup}>
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2" style={styles.inputIcon}>
                       <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
@@ -649,7 +892,7 @@ export default function FileManagementPage() {
             <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
               <div style={styles.modalHeader}>
                 <h2 style={styles.modalTitle}>Edit Document</h2>
-                <button onClick={handleCloseEditModal} style={styles.closeModalBtn}>
+                <button onClick={handleCloseEditModal} style={styles.modalCloseBtn}>
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <line x1="18" y1="6" x2="6" y2="18"/>
                     <line x1="6" y1="6" x2="18" y2="18"/>
@@ -659,7 +902,7 @@ export default function FileManagementPage() {
 
               <form onSubmit={handleEditSubmit} style={styles.modalForm}>
                 <div style={styles.formGroup}>
-                  <label style={styles.label}>Document Type</label>
+                  <label style={styles.label}>DOCUMENT TYPE</label>
                   <div style={styles.typeGrid}>
                     {documentTypes.map((type) => (
                       <button
@@ -679,7 +922,7 @@ export default function FileManagementPage() {
                 </div>
 
                 <div style={styles.formGroup}>
-                  <label style={styles.label}>Title</label>
+                  <label style={styles.label}>TITLE</label>
                   <input
                     type="text"
                     value={documentTitle}
@@ -691,7 +934,7 @@ export default function FileManagementPage() {
                 </div>
 
                 <div style={styles.formGroup}>
-                  <label style={styles.label}>Link</label>
+                  <label style={styles.label}>LINK</label>
                   <div style={styles.inputGroup}>
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2" style={styles.inputIcon}>
                       <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
@@ -732,12 +975,16 @@ export default function FileManagementPage() {
         {showDeleteModal && deleteTarget && (
           <div style={styles.modalOverlay} onClick={handleCloseDeleteModal}>
             <div style={styles.deleteModal} onClick={(e) => e.stopPropagation()}>
+              <button onClick={handleCloseDeleteModal} style={styles.modalCloseBtn}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <line x1="18" y1="6" x2="6" y2="18"/>
+                  <line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
               <div style={styles.deleteIconWrapper}>
-                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#f56565" strokeWidth="2">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2">
                   <polyline points="3 6 5 6 21 6"/>
                   <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
-                  <line x1="10" y1="11" x2="10" y2="17"/>
-                  <line x1="14" y1="11" x2="14" y2="17"/>
                 </svg>
               </div>
               <h3 style={styles.deleteTitle}>Delete {deleteTarget.type === 'folder' ? 'Folder' : 'Document'}</h3>
@@ -745,156 +992,25 @@ export default function FileManagementPage() {
                 Are you sure you want to delete <strong>"{deleteTarget.name}"</strong>?
                 {deleteTarget.type === 'folder' && ' This will also delete all documents inside.'}
               </p>
-              <p style={styles.deleteWarning}>This action cannot be undone.</p>
               <div style={styles.deleteActions}>
-                <button onClick={handleCloseDeleteModal} style={styles.btnSecondary}>
-                  Cancel
-                </button>
-                <button onClick={handleConfirmDelete} style={styles.btnDanger}>
-                  Delete
-                </button>
+                <button onClick={handleCloseDeleteModal} style={styles.btnSecondary}>Cancel</button>
+                <button onClick={handleConfirmDelete} style={styles.btnDanger}>Delete</button>
               </div>
             </div>
           </div>
         )}
 
-        {/* Success Modal */}
-        {showSuccessModal && (
-          <div style={styles.modalOverlay} onClick={() => setShowSuccessModal(false)}>
-            <div style={styles.successModal} onClick={(e) => e.stopPropagation()}>
-              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#48bb78" strokeWidth="2">
-                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
-                <polyline points="22 4 12 14.01 9 11.01"/>
+        {/* Success Toast */}
+        {showSuccessToast && (
+          <div style={styles.successToast}>
+            <div style={styles.successToastIcon}>
+              <svg width="20" height="20" fill="white" viewBox="0 0 16 16">
+                <path d="M12.736 3.97a.733.733 0 0 1 1.047 0c.286.289.29.756.01 1.05L7.88 12.01a.733.733 0 0 1-1.065.02L3.217 8.384a.757.757 0 0 1 0-1.06.733.733 0 0 1 1.047 0l3.052 3.093 5.4-6.425z"/>
               </svg>
-              <p style={styles.successText}>{successMessage || 'Success!'}</p>
             </div>
+            <span style={styles.successToastText}>{successMessage}</span>
           </div>
         )}
-
-        {/* Documents Section */}
-        <div style={styles.section}>
-          {(selectedFolder?.documents.length || 0) === 0 ? (
-            <div style={styles.emptyState}>
-              <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#cbd5e0" strokeWidth="1.5">
-                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-                <line x1="12" y1="11" x2="12" y2="17"/>
-                <line x1="9" y1="14" x2="15" y2="14"/>
-              </svg>
-              <p style={styles.emptyText}>No documents yet</p>
-              <p style={styles.emptySubtext}>Add your first document to get started</p>
-              <button onClick={handleOpenAddModal} style={styles.btnPrimary}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <line x1="12" y1="5" x2="12" y2="19"/>
-                  <line x1="5" y1="12" x2="19" y2="12"/>
-                </svg>
-                Add Document
-              </button>
-            </div>
-          ) : (
-            <>
-              <div style={styles.toolbar}>
-                <div style={styles.searchBox}>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2">
-                    <circle cx="11" cy="11" r="8"/>
-                    <line x1="21" y1="21" x2="16.65" y2="16.65"/>
-                  </svg>
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search documents..."
-                    style={styles.searchInput}
-                  />
-                  {searchQuery && (
-                    <button onClick={() => setSearchQuery('')} style={styles.clearBtn}>
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <line x1="18" y1="6" x2="6" y2="18"/>
-                        <line x1="6" y1="6" x2="18" y2="18"/>
-                      </svg>
-                    </button>
-                  )}
-                </div>
-                <select
-                  value={filterType}
-                  onChange={(e) => setFilterType(e.target.value)}
-                  style={styles.select}
-                >
-                  <option value="">All types</option>
-                  {documentTypes.map(type => (
-                    <option key={type.value} value={type.value}>{type.label}</option>
-                  ))}
-                </select>
-                <button onClick={handleOpenAddModal} style={styles.btnPrimary}>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <line x1="12" y1="5" x2="12" y2="19"/>
-                    <line x1="5" y1="12" x2="19" y2="12"/>
-                  </svg>
-                  Add
-                </button>
-              </div>
-
-              <div style={styles.docGrid}>
-                {filteredDocuments.length === 0 ? (
-                  <p style={styles.noResults}>No documents found</p>
-                ) : (
-                  filteredDocuments.map((doc) => {
-                    const docId = doc._id || doc.id || '';
-                    return (
-                      <div key={docId} style={styles.docCard}>
-                        <div style={styles.docCardHeader}>
-                          <div style={styles.docIcon}>
-                            {getDocumentIcon(doc.type)}
-                          </div>
-                          <span style={styles.docType}>{doc.typeLabel}</span>
-                          <button
-                            onClick={() => handleOpenEditModal(doc)}
-                            style={styles.docEditBtn}
-                            title="Edit"
-                          >
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-                              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                            </svg>
-                          </button>
-                          <button
-                            onClick={() => handleOpenDeleteModal('document', docId, doc.title)}
-                            style={styles.docDeleteBtn}
-                            title="Delete"
-                          >
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                              <polyline points="3 6 5 6 21 6"/>
-                              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
-                            </svg>
-                          </button>
-                        </div>
-                        <h3 style={styles.docTitle}>{doc.title}</h3>
-                        <a
-                          href={doc.link}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          style={styles.docLink}
-                        >
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
-                            <polyline points="15 3 21 3 21 9"/>
-                            <line x1="10" y1="14" x2="21" y2="3"/>
-                          </svg>
-                          <span>{doc.link.length > 35 ? doc.link.substring(0, 35) + '...' : doc.link}</span>
-                        </a>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-
-              <div style={styles.footer}>
-                <span style={styles.count}>
-                  {filteredDocuments.length} of {selectedFolder?.documents.length} documents
-                </span>
-              </div>
-            </>
-          )}
-        </div>
       </div>
     </AppLayout>
   );
@@ -903,86 +1019,72 @@ export default function FileManagementPage() {
 const styles: { [key: string]: React.CSSProperties } = {
   container: {
     width: '100%',
+    maxWidth: '1400px',
+    margin: '0 auto',
   },
   header: {
-    marginBottom: '32px',
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    flexWrap: 'wrap',
-    gap: '16px',
-  },
-  headerDetail: {
-    marginBottom: '32px',
+    marginBottom: '24px',
   },
   title: {
     fontSize: '28px',
     fontWeight: '700',
-    color: '#2d3748',
+    color: '#1e293b',
     margin: 0,
-    marginBottom: '8px',
+    marginBottom: '4px',
   },
   subtitle: {
-    fontSize: '16px',
-    color: '#718096',
+    fontSize: '14px',
+    color: '#64748b',
     margin: 0,
+  },
+  addButton: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '12px 20px',
+    background: 'linear-gradient(135deg, #879BFF 0%, #FF6495 100%)',
+    color: 'white',
+    border: 'none',
+    borderRadius: '10px',
+    fontSize: '14px',
+    fontWeight: '600',
+    cursor: 'pointer',
+    fontFamily: 'inherit',
   },
   loadingState: {
     textAlign: 'center',
     padding: '60px 20px',
-    color: '#718096',
+    color: '#64748b',
     fontSize: '16px',
-  },
-  folderHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '16px',
-    marginTop: '20px',
-  },
-  folderIconLarge: {
-    width: '56px',
-    height: '56px',
-    borderRadius: '14px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  folderTitleLarge: {
-    fontSize: '28px',
-    fontWeight: '700',
-    color: '#2d3748',
-    margin: 0,
-  },
-  backBtn: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: '8px',
-    padding: '8px 0',
-    background: 'none',
-    border: 'none',
-    fontSize: '15px',
-    color: '#718096',
-    cursor: 'pointer',
-    fontFamily: 'inherit',
   },
   foldersGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
     gap: '20px',
   },
   folderCard: {
     background: 'white',
     borderRadius: '12px',
-    padding: '24px',
+    border: '1px solid #e2e8f0',
+    overflow: 'hidden',
+    transition: 'all 0.2s',
     boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
-    border: '1px solid #f1f5f9',
-    transition: 'box-shadow 0.2s, transform 0.2s',
-    cursor: 'pointer',
+  },
+  folderColorLine: {
+    height: '4px',
+    width: '100%',
+  },
+  folderCardBody: {
+    padding: '20px',
   },
   folderCardContent: {
     display: 'flex',
     alignItems: 'center',
     gap: '16px',
+    cursor: 'pointer',
   },
   folderIcon: {
     width: '48px',
@@ -998,14 +1100,14 @@ const styles: { [key: string]: React.CSSProperties } = {
     minWidth: 0,
   },
   folderName: {
-    fontSize: '17px',
+    fontSize: '16px',
     fontWeight: '600',
-    color: '#2d3748',
+    color: '#1e293b',
     margin: 0,
   },
   folderMeta: {
-    fontSize: '14px',
-    color: '#a0aec0',
+    fontSize: '13px',
+    color: '#64748b',
     marginTop: '4px',
     display: 'block',
   },
@@ -1014,46 +1116,32 @@ const styles: { [key: string]: React.CSSProperties } = {
     gap: '8px',
     marginTop: '16px',
     paddingTop: '16px',
-    borderTop: '1px solid #f1f5f9',
+    borderTop: '1px solid #e2e8f0',
   },
   actionBtn: {
     padding: '8px 12px',
-    background: '#f7fafc',
-    border: '1px solid #e2e8f0',
+    background: '#f1f5f9',
+    border: 'none',
     borderRadius: '8px',
     cursor: 'pointer',
-    color: '#718096',
+    color: '#64748b',
     display: 'flex',
     alignItems: 'center',
-    gap: '6px',
-    fontSize: '13px',
-    fontFamily: 'inherit',
-    transition: 'background 0.15s',
+    transition: 'all 0.2s',
   },
   actionBtnDanger: {
     padding: '8px 12px',
-    background: '#fff5f5',
-    border: '1px solid #fed7d7',
+    background: '#fef2f2',
+    border: 'none',
     borderRadius: '8px',
     cursor: 'pointer',
-    color: '#f56565',
+    color: '#ef4444',
     display: 'flex',
     alignItems: 'center',
-    gap: '6px',
-    fontSize: '13px',
-    fontFamily: 'inherit',
-  },
-  iconBtn: {
-    padding: '8px',
-    background: 'none',
-    border: 'none',
-    cursor: 'pointer',
-    borderRadius: '6px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
+    transition: 'all 0.2s',
   },
   editRow: {
+    padding: '20px',
     display: 'flex',
     flexDirection: 'column',
     gap: '12px',
@@ -1061,9 +1149,9 @@ const styles: { [key: string]: React.CSSProperties } = {
   editInput: {
     width: '100%',
     padding: '12px',
-    fontSize: '16px',
+    fontSize: '15px',
     border: '2px solid #879BFF',
-    borderRadius: '10px',
+    borderRadius: '8px',
     outline: 'none',
     fontFamily: 'inherit',
     boxSizing: 'border-box',
@@ -1072,179 +1160,308 @@ const styles: { [key: string]: React.CSSProperties } = {
     display: 'flex',
     gap: '8px',
   },
+  saveBtn: {
+    padding: '8px 16px',
+    background: '#879BFF',
+    color: 'white',
+    border: 'none',
+    borderRadius: '6px',
+    fontSize: '14px',
+    fontWeight: '500',
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+  },
+  cancelBtn: {
+    padding: '8px 16px',
+    background: '#f1f5f9',
+    color: '#64748b',
+    border: 'none',
+    borderRadius: '6px',
+    fontSize: '14px',
+    fontWeight: '500',
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+  },
   newFolderCard: {
     background: 'white',
     borderRadius: '12px',
-    padding: '24px',
-    boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+    padding: '20px',
     border: '2px solid #879BFF',
   },
   newFolderInput: {
     width: '100%',
-    padding: '14px',
-    fontSize: '16px',
+    padding: '12px',
+    fontSize: '15px',
     border: '1px solid #e2e8f0',
-    borderRadius: '10px',
+    borderRadius: '8px',
     outline: 'none',
     fontFamily: 'inherit',
-    marginBottom: '16px',
+    marginBottom: '12px',
     boxSizing: 'border-box',
   },
   newFolderActions: {
     display: 'flex',
     gap: '10px',
   },
-  addFolderCard: {
-    background: 'white',
+  emptyFolderState: {
+    gridColumn: '1 / -1',
+    textAlign: 'center',
+    padding: '60px 20px',
+    background: '#f8fafc',
     borderRadius: '12px',
-    padding: '40px 24px',
-    border: '2px dashed #d1d5db',
+    border: '1px dashed #cbd5e1',
+  },
+  emptyIcon: {
+    marginBottom: '16px',
+  },
+  emptyText: {
+    fontSize: '18px',
+    fontWeight: '600',
+    color: '#64748b',
+    margin: '0 0 8px 0',
+  },
+  emptySubtext: {
+    fontSize: '14px',
+    color: '#94a3b8',
+    margin: 0,
+  },
+  detailHeader: {
+    marginBottom: '24px',
+  },
+  backBtn: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '8px 0',
+    background: 'none',
+    border: 'none',
+    fontSize: '14px',
+    color: '#64748b',
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+    marginBottom: '16px',
+  },
+  folderTitleRow: {
     display: 'flex',
-    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '16px',
+  },
+  folderIconLarge: {
+    width: '56px',
+    height: '56px',
+    borderRadius: '14px',
+    display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: '12px',
-    cursor: 'pointer',
-    transition: 'border-color 0.2s, background 0.2s',
   },
-  addFolderText: {
-    fontSize: '15px',
-    fontWeight: '500',
-    color: '#9ca3af',
+  folderTitleLarge: {
+    fontSize: '24px',
+    fontWeight: '700',
+    color: '#1e293b',
+    margin: 0,
   },
-  section: {
-    marginTop: '24px',
+  folderSubtitle: {
+    fontSize: '14px',
+    color: '#64748b',
+    margin: '4px 0 0 0',
   },
-  toolbar: {
+  controlsRow: {
     display: 'flex',
-    gap: '12px',
-    marginBottom: '24px',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '16px',
     flexWrap: 'wrap',
-    alignItems: 'center',
+    gap: '16px',
   },
-  searchBox: {
+  filterTabs: {
+    display: 'flex',
+    gap: '8px',
+    flexWrap: 'wrap',
+  },
+  filterTab: {
     display: 'flex',
     alignItems: 'center',
-    gap: '10px',
-    padding: '10px 14px',
-    background: 'white',
-    border: '1px solid #e2e8f0',
+    gap: '8px',
+    padding: '8px 16px',
+    border: 'none',
+    borderRadius: '20px',
+    background: '#f1f5f9',
+    color: '#64748b',
+    fontSize: '14px',
+    fontWeight: '500',
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+    fontFamily: 'inherit',
+  },
+  filterTabActive: {
+    background: '#879BFF',
+    color: 'white',
+  },
+  filterBadge: {
+    padding: '2px 8px',
     borderRadius: '10px',
-    flex: '1',
-    minWidth: '200px',
+    fontSize: '12px',
+    fontWeight: '600',
+    background: 'white',
+    color: '#64748b',
+  },
+  filterBadgeActive: {
+    background: 'rgba(255, 255, 255, 0.2)',
+    color: 'white',
+  },
+  rightControls: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+  },
+  viewToggle: {
+    display: 'flex',
+    gap: '4px',
+    background: '#f1f5f9',
+    padding: '4px',
+    borderRadius: '8px',
+  },
+  viewButton: {
+    padding: '8px 10px',
+    border: 'none',
+    background: 'transparent',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    color: '#64748b',
+    transition: 'all 0.2s',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  viewButtonActive: {
+    background: 'white',
+    color: '#879BFF',
+    boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+  },
+  searchContainer: {
+    position: 'relative',
+    width: '220px',
+  },
+  searchIcon: {
+    position: 'absolute',
+    left: '12px',
+    top: '50%',
+    transform: 'translateY(-50%)',
+    pointerEvents: 'none',
   },
   searchInput: {
-    flex: 1,
-    border: 'none',
-    background: 'none',
-    fontSize: '15px',
+    width: '100%',
+    padding: '10px 36px 10px 36px',
+    border: '1px solid #e2e8f0',
+    borderRadius: '8px',
+    fontSize: '14px',
     outline: 'none',
     fontFamily: 'inherit',
+    boxSizing: 'border-box',
   },
-  clearBtn: {
+  clearSearchBtn: {
+    position: 'absolute',
+    right: '8px',
+    top: '50%',
+    transform: 'translateY(-50%)',
+    background: '#f1f5f9',
+    border: 'none',
+    borderRadius: '4px',
     padding: '4px',
-    background: 'none',
-    border: 'none',
     cursor: 'pointer',
-    color: '#9ca3af',
+    color: '#64748b',
     display: 'flex',
   },
-  select: {
-    padding: '10px 14px',
-    fontSize: '14px',
-    border: '1px solid #e2e8f0',
-    borderRadius: '10px',
-    background: 'white',
-    cursor: 'pointer',
-    fontFamily: 'inherit',
-    outline: 'none',
-    minWidth: '140px',
+  paginationRow: {
+    marginBottom: '20px',
   },
-  btnPrimary: {
-    padding: '10px 18px',
-    background: 'linear-gradient(135deg, #879BFF 0%, #FF6495 100%)',
-    color: 'white',
-    border: 'none',
-    borderRadius: '8px',
+  paginationText: {
     fontSize: '14px',
-    fontWeight: '600',
-    cursor: 'pointer',
-    fontFamily: 'inherit',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '6px',
-  },
-  btnSecondary: {
-    padding: '10px 18px',
-    background: 'white',
-    color: '#4a5568',
-    border: '1px solid #e2e8f0',
-    borderRadius: '8px',
-    fontSize: '14px',
-    fontWeight: '500',
-    cursor: 'pointer',
-    fontFamily: 'inherit',
+    color: '#64748b',
   },
   docGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
+    gap: '20px',
+  },
+  docList: {
+    display: 'flex',
+    flexDirection: 'column',
     gap: '16px',
   },
   docCard: {
     background: 'white',
     borderRadius: '12px',
-    padding: '20px',
     border: '1px solid #e2e8f0',
-    transition: 'box-shadow 0.2s',
+    overflow: 'hidden',
+    transition: 'all 0.2s',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+  },
+  docCardList: {
+    background: 'white',
+    borderRadius: '12px',
+    border: '1px solid #e2e8f0',
+    overflow: 'hidden',
+    transition: 'all 0.2s',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+  },
+  docTypeLine: {
+    height: '4px',
+    width: '100%',
+  },
+  docCardBody: {
+    padding: '20px',
   },
   docCardHeader: {
     display: 'flex',
     alignItems: 'center',
-    gap: '10px',
+    gap: '12px',
     marginBottom: '12px',
   },
   docIcon: {
-    width: '36px',
-    height: '36px',
-    background: '#f3f4f6',
-    borderRadius: '8px',
+    width: '40px',
+    height: '40px',
+    borderRadius: '10px',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    color: '#374151',
   },
-  docType: {
-    fontSize: '12px',
-    fontWeight: '500',
-    color: '#718096',
+  docTypeBadge: {
+    padding: '4px 10px',
+    borderRadius: '12px',
+    fontSize: '11px',
+    fontWeight: '600',
     textTransform: 'uppercase',
-    letterSpacing: '0.5px',
-    flex: 1,
   },
-  docEditBtn: {
-    padding: '6px',
-    background: 'none',
-    border: 'none',
-    cursor: 'pointer',
-    color: '#d1d5db',
-    borderRadius: '6px',
+  docActions: {
     display: 'flex',
-    transition: 'color 0.15s',
+    gap: '4px',
+    marginLeft: 'auto',
   },
-  docDeleteBtn: {
+  docActionBtn: {
     padding: '6px',
-    background: 'none',
+    background: '#f1f5f9',
     border: 'none',
-    cursor: 'pointer',
-    color: '#d1d5db',
     borderRadius: '6px',
+    cursor: 'pointer',
+    color: '#64748b',
     display: 'flex',
-    transition: 'color 0.15s',
+    transition: 'all 0.2s',
+  },
+  docActionBtnDanger: {
+    padding: '6px',
+    background: '#fef2f2',
+    border: 'none',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    color: '#ef4444',
+    display: 'flex',
+    transition: 'all 0.2s',
   },
   docTitle: {
     fontSize: '16px',
     fontWeight: '600',
-    color: '#2d3748',
+    color: '#1e293b',
     margin: '0 0 8px 0',
     lineHeight: '1.4',
   },
@@ -1256,38 +1473,16 @@ const styles: { [key: string]: React.CSSProperties } = {
     alignItems: 'center',
     gap: '6px',
   },
-  noResults: {
-    textAlign: 'center',
-    padding: '60px 20px',
-    fontSize: '15px',
-    color: '#9ca3af',
-    gridColumn: '1 / -1',
-  },
-  footer: {
-    marginTop: '24px',
-    textAlign: 'center',
-  },
-  count: {
-    fontSize: '14px',
-    color: '#a0aec0',
-  },
   emptyState: {
     textAlign: 'center',
-    padding: '80px 20px',
+    padding: '60px 20px',
+    background: '#f8fafc',
+    borderRadius: '12px',
+    border: '1px dashed #cbd5e1',
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
-  },
-  emptyText: {
-    fontSize: '18px',
-    fontWeight: '500',
-    color: '#4a5568',
-    margin: '24px 0 8px 0',
-  },
-  emptySubtext: {
-    fontSize: '15px',
-    color: '#a0aec0',
-    margin: '0 0 32px 0',
+    gap: '16px',
   },
   modalOverlay: {
     position: 'fixed',
@@ -1315,21 +1510,21 @@ const styles: { [key: string]: React.CSSProperties } = {
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: '24px 28px',
-    borderBottom: '1px solid #e5e7eb',
+    borderBottom: '1px solid #e2e8f0',
   },
   modalTitle: {
     fontSize: '20px',
     fontWeight: '600',
-    color: '#2d3748',
+    color: '#1e293b',
     margin: 0,
   },
-  closeModalBtn: {
+  modalCloseBtn: {
     padding: '8px',
-    background: '#f3f4f6',
+    background: '#f1f5f9',
     border: 'none',
     borderRadius: '8px',
     cursor: 'pointer',
-    color: '#6b7280',
+    color: '#64748b',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1352,16 +1547,17 @@ const styles: { [key: string]: React.CSSProperties } = {
     gap: '8px',
   },
   label: {
-    fontSize: '14px',
-    fontWeight: '500',
-    color: '#4a5568',
+    fontSize: '11px',
+    fontWeight: '600',
+    color: '#64748b',
+    letterSpacing: '0.5px',
   },
   input: {
     width: '100%',
-    padding: '14px',
+    padding: '12px',
     fontSize: '15px',
-    border: '1px solid #d1d5db',
-    borderRadius: '10px',
+    border: '1px solid #e2e8f0',
+    borderRadius: '8px',
     outline: 'none',
     fontFamily: 'inherit',
     boxSizing: 'border-box',
@@ -1373,21 +1569,21 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   inputIcon: {
     position: 'absolute',
-    left: '14px',
+    left: '12px',
   },
   inputWithIcon: {
     width: '100%',
-    padding: '14px 14px 14px 46px',
+    padding: '12px 12px 12px 42px',
     fontSize: '15px',
-    border: '1px solid #d1d5db',
-    borderRadius: '10px',
+    border: '1px solid #e2e8f0',
+    borderRadius: '8px',
     outline: 'none',
     fontFamily: 'inherit',
     boxSizing: 'border-box',
   },
   typeGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))',
+    gridTemplateColumns: 'repeat(3, 1fr)',
     gap: '8px',
   },
   typeBtn: {
@@ -1396,36 +1592,56 @@ const styles: { [key: string]: React.CSSProperties } = {
     alignItems: 'center',
     gap: '6px',
     padding: '14px 10px',
-    background: '#f9fafb',
-    border: '2px solid #e5e7eb',
+    background: '#f8fafc',
+    border: '2px solid #e2e8f0',
     borderRadius: '10px',
     cursor: 'pointer',
     fontSize: '12px',
     fontWeight: '500',
-    color: '#374151',
+    color: '#64748b',
     fontFamily: 'inherit',
     transition: 'all 0.15s',
   },
   typeBtnSelected: {
-    background: '#eef2ff',
+    background: '#E8ECFF',
     borderColor: '#879BFF',
-    color: '#5a67d8',
+    color: '#879BFF',
   },
-  successModal: {
-    background: 'white',
-    borderRadius: '16px',
-    padding: '40px 60px',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: '16px',
-    boxShadow: '0 20px 60px rgba(0, 0, 0, 0.2)',
-  },
-  successText: {
-    fontSize: '18px',
+  btnPrimary: {
+    padding: '12px 20px',
+    background: 'linear-gradient(135deg, #879BFF 0%, #FF6495 100%)',
+    color: 'white',
+    border: 'none',
+    borderRadius: '8px',
+    fontSize: '14px',
     fontWeight: '600',
-    color: '#2d3748',
-    margin: 0,
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+  },
+  btnSecondary: {
+    padding: '12px 20px',
+    background: 'white',
+    color: '#64748b',
+    border: '1px solid #e2e8f0',
+    borderRadius: '8px',
+    fontSize: '14px',
+    fontWeight: '500',
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+  },
+  btnDanger: {
+    padding: '12px 20px',
+    background: '#ef4444',
+    color: 'white',
+    border: 'none',
+    borderRadius: '8px',
+    fontSize: '14px',
+    fontWeight: '600',
+    cursor: 'pointer',
+    fontFamily: 'inherit',
   },
   deleteModal: {
     background: 'white',
@@ -1435,11 +1651,12 @@ const styles: { [key: string]: React.CSSProperties } = {
     maxWidth: '400px',
     textAlign: 'center',
     boxShadow: '0 20px 60px rgba(0, 0, 0, 0.2)',
+    position: 'relative',
   },
   deleteIconWrapper: {
     width: '64px',
     height: '64px',
-    background: '#fff5f5',
+    background: '#fef2f2',
     borderRadius: '50%',
     display: 'flex',
     alignItems: 'center',
@@ -1449,35 +1666,45 @@ const styles: { [key: string]: React.CSSProperties } = {
   deleteTitle: {
     fontSize: '20px',
     fontWeight: '600',
-    color: '#2d3748',
+    color: '#1e293b',
     margin: '0 0 12px 0',
   },
   deleteMessage: {
-    fontSize: '15px',
-    color: '#4a5568',
-    margin: '0 0 8px 0',
-    lineHeight: '1.5',
-  },
-  deleteWarning: {
-    fontSize: '13px',
-    color: '#a0aec0',
+    fontSize: '14px',
+    color: '#64748b',
     margin: '0 0 24px 0',
+    lineHeight: '1.5',
   },
   deleteActions: {
     display: 'flex',
     gap: '12px',
     justifyContent: 'center',
   },
-  btnDanger: {
-    padding: '10px 24px',
-    background: '#f56565',
+  successToast: {
+    position: 'fixed',
+    top: '24px',
+    right: '24px',
+    background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
     color: 'white',
-    border: 'none',
-    borderRadius: '8px',
+    padding: '16px 24px',
+    borderRadius: '12px',
+    boxShadow: '0 10px 40px rgba(34, 197, 94, 0.3)',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    zIndex: 2000,
+  },
+  successToastIcon: {
+    width: '32px',
+    height: '32px',
+    background: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: '50%',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  successToastText: {
     fontSize: '14px',
     fontWeight: '600',
-    cursor: 'pointer',
-    fontFamily: 'inherit',
-    transition: 'background 0.15s',
   },
 };
