@@ -52,6 +52,7 @@ interface Sprint {
   _id: string;
   name: string;
   status: 'planned' | 'active' | 'completed';
+  startDate?: string;
   endDate?: string;
   managers?: Array<{
     _id: string;
