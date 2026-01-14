@@ -55,10 +55,16 @@ export default function BoardPage() {
       const data = await response.json();
 
       if (data.success) {
-        const inSprintBacklogs = data.backlogs.filter(
-          (b: Backlog) => b.status === 'in-sprint' && b.sprint?.status === 'active'
-        );
-        setBacklogs(inSprintBacklogs);
+        setBacklogs(data.backlogs);
+
+        // Find the active sprint and set it as default filter
+        const activeSprint = data.backlogs.find(
+          (b: Backlog) => b.sprint?.status === 'active'
+        )?.sprint?.name;
+
+        if (activeSprint) {
+          setSelectedSprint(activeSprint);
+        }
       }
     } catch (error) {
       console.error('Error fetching backlogs:', error);
@@ -99,13 +105,21 @@ export default function BoardPage() {
   }
 
   const projects = Array.from(new Set(backlogs.map(b => b.project))).sort();
-  const sprints = Array.from(new Set(backlogs.map(b => b.sprint?.name).filter(Boolean))).sort();
+
+  // Filter sprints based on selected project
+  const projectBacklogs = selectedProject === 'all'
+    ? backlogs
+    : backlogs.filter(b => b.project === selectedProject);
+  const sprints = Array.from(new Set(projectBacklogs.map(b => b.sprint?.name).filter(Boolean))).sort();
+  const hasBacklogsWithoutSprint = projectBacklogs.some(b => !b.sprint);
 
   let filteredBacklogs = backlogs;
   if (selectedProject !== 'all') {
     filteredBacklogs = filteredBacklogs.filter(b => b.project === selectedProject);
   }
-  if (selectedSprint !== 'all') {
+  if (selectedSprint === 'no-sprint') {
+    filteredBacklogs = filteredBacklogs.filter(b => !b.sprint);
+  } else if (selectedSprint !== 'all') {
     filteredBacklogs = filteredBacklogs.filter(b => b.sprint?.name === selectedSprint);
   }
 
@@ -282,7 +296,18 @@ export default function BoardPage() {
             <select
               style={styles.filterSelect}
               value={selectedProject}
-              onChange={(e) => setSelectedProject(e.target.value)}
+              onChange={(e) => {
+                const newProject = e.target.value;
+                setSelectedProject(newProject);
+                // Reset sprint filter if current sprint not available for new project
+                const newProjectBacklogs = newProject === 'all'
+                  ? backlogs
+                  : backlogs.filter(b => b.project === newProject);
+                const availableSprints = newProjectBacklogs.map(b => b.sprint?.name).filter(Boolean);
+                if (selectedSprint !== 'all' && selectedSprint !== 'no-sprint' && !availableSprints.includes(selectedSprint)) {
+                  setSelectedSprint('all');
+                }
+              }}
             >
               <option value="all">All Projects</option>
               {projects.map(project => (
@@ -297,7 +322,10 @@ export default function BoardPage() {
               value={selectedSprint}
               onChange={(e) => setSelectedSprint(e.target.value)}
             >
-              <option value="all">All Sprints</option>
+              <option value="all">All Backlogs</option>
+              {hasBacklogsWithoutSprint && (
+                <option value="no-sprint">No Sprint</option>
+              )}
               {sprints.map(sprint => (
                 <option key={sprint} value={sprint}>{sprint}</option>
               ))}
@@ -495,8 +523,9 @@ const styles: { [key: string]: React.CSSProperties } = {
     flexDirection: 'column',
     gap: '10px',
     minHeight: '200px',
-    maxHeight: 'calc(100vh - 340px)',
+    maxHeight: 'calc(100vh - 300px)',
     overflowY: 'auto',
+    overflowX: 'hidden',
   },
   emptyColumn: {
     display: 'flex',
@@ -519,6 +548,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     position: 'relative',
     overflow: 'hidden',
     transition: 'box-shadow 0.2s, transform 0.2s',
+    flexShrink: 0,
   },
   taskContent: {
     padding: '14px',

@@ -54,6 +54,14 @@ const backlogSchema = new mongoose.Schema({
     trim: true,
     default: ''
   },
+  startDate: {
+    type: Date,
+    default: null
+  },
+  endDate: {
+    type: Date,
+    default: null
+  },
   startedAt: {
     type: Date,
     default: null
@@ -61,7 +69,21 @@ const backlogSchema = new mongoose.Schema({
   completedAt: {
     type: Date,
     default: null
-  }
+  },
+  checklist: [{
+    id: {
+      type: String,
+      required: true
+    },
+    text: {
+      type: String,
+      required: true
+    },
+    completed: {
+      type: Boolean,
+      default: false
+    }
+  }]
 }, {
   timestamps: true
 });
