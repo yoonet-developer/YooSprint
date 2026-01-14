@@ -3,6 +3,12 @@
 import { useState, useEffect, useRef } from 'react';
 import AppLayout from '@/components/shared/AppLayout';
 
+interface ChecklistItem {
+  id: string;
+  text: string;
+  completed: boolean;
+}
+
 interface Backlog {
   _id: string;
   title: string;
@@ -23,6 +29,9 @@ interface Backlog {
     name: string;
     status: string;
   };
+  startDate?: string;
+  endDate?: string;
+  checklist?: ChecklistItem[];
   createdAt: string;
 }
 
@@ -73,7 +82,11 @@ export default function BacklogsPage() {
     priority: 'medium' as 'low' | 'medium' | 'high',
     storyPoints: 0,
     assignee: '',
+    startDate: '',
+    endDate: '',
+    checklist: [] as ChecklistItem[],
   });
+  const [newChecklistItem, setNewChecklistItem] = useState('');
   const [projects, setProjects] = useState<string[]>([]);
   const [isAddingNewProject, setIsAddingNewProject] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
@@ -222,13 +235,27 @@ export default function BacklogsPage() {
       const url = editingBacklog ? `/api/backlogs/${editingBacklog._id}` : '/api/backlogs';
       const method = editingBacklog ? 'PUT' : 'POST';
 
+      const payload = {
+        title: formData.title,
+        description: formData.description || null,
+        project: formData.project,
+        priority: formData.priority,
+        storyPoints: formData.storyPoints,
+        assignee: formData.assignee || null,
+        startDate: formData.startDate || null,
+        endDate: formData.endDate || null,
+        checklist: formData.checklist,
+      };
+
+      console.log('[Backlog] Saving payload:', payload);
+
       const response = await fetch(url, {
         method,
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`,
         },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(payload),
       });
 
       const data = await response.json();
@@ -249,6 +276,7 @@ export default function BacklogsPage() {
   };
 
   const handleEdit = (backlog: Backlog) => {
+    console.log('[Backlog] Editing backlog:', backlog);
     setEditingBacklog(backlog);
     setFormData({
       title: backlog.title,
@@ -257,7 +285,11 @@ export default function BacklogsPage() {
       priority: backlog.priority,
       storyPoints: backlog.storyPoints,
       assignee: backlog.assignee?._id || '',
+      startDate: backlog.startDate ? new Date(backlog.startDate).toISOString().split('T')[0] : '',
+      endDate: backlog.endDate ? new Date(backlog.endDate).toISOString().split('T')[0] : '',
+      checklist: backlog.checklist || [],
     });
+    setNewChecklistItem('');
     setShowModal(true);
   };
 
@@ -369,10 +401,46 @@ export default function BacklogsPage() {
       priority: 'medium',
       storyPoints: 0,
       assignee: '',
+      startDate: '',
+      endDate: '',
+      checklist: [],
     });
     setEditingBacklog(null);
     setIsAddingNewProject(false);
     setNewProjectName('');
+    setNewChecklistItem('');
+  };
+
+  // Checklist functions
+  const addChecklistItem = () => {
+    if (newChecklistItem.trim()) {
+      const newItem: ChecklistItem = {
+        id: Date.now().toString(),
+        text: newChecklistItem.trim(),
+        completed: false,
+      };
+      setFormData({
+        ...formData,
+        checklist: [...formData.checklist, newItem],
+      });
+      setNewChecklistItem('');
+    }
+  };
+
+  const removeChecklistItem = (id: string) => {
+    setFormData({
+      ...formData,
+      checklist: formData.checklist.filter(item => item.id !== id),
+    });
+  };
+
+  const toggleChecklistItem = (id: string) => {
+    setFormData({
+      ...formData,
+      checklist: formData.checklist.map(item =>
+        item.id === id ? { ...item, completed: !item.completed } : item
+      ),
+    });
   };
 
   const openAddModal = () => {
@@ -657,6 +725,20 @@ export default function BacklogsPage() {
                       <p style={styles.cardDescription}>{backlog.description}</p>
                     )}
 
+                    {/* Date Range */}
+                    {(backlog.startDate || backlog.endDate) && (
+                      <div style={styles.dateRow}>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="#6b7280" viewBox="0 0 16 16">
+                          <path d="M3.5 0a.5.5 0 0 1 .5.5V1h8V.5a.5.5 0 0 1 1 0V1h1a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2h1V.5a.5.5 0 0 1 .5-.5M1 4v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V4z"/>
+                        </svg>
+                        <span style={styles.dateText}>
+                          {backlog.startDate && new Date(backlog.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                          {backlog.startDate && backlog.endDate && ' - '}
+                          {backlog.endDate && new Date(backlog.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                        </span>
+                      </div>
+                    )}
+
                     {/* Sprint Badge */}
                     {backlog.sprint && (
                       <div style={styles.sprintRow}>
@@ -665,6 +747,19 @@ export default function BacklogsPage() {
                           <path d="M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16m7-8A7 7 0 1 1 1 8a7 7 0 0 1 14 0"/>
                         </svg>
                         <span style={styles.sprintName}>{backlog.sprint.name}</span>
+                      </div>
+                    )}
+
+                    {/* Checklist Count */}
+                    {backlog.checklist && backlog.checklist.length > 0 && (
+                      <div style={styles.checklistCount}>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="#6b7280" viewBox="0 0 16 16">
+                          <path d="M14 1a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1zM2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2z"/>
+                          <path d="M10.97 4.97a.75.75 0 0 1 1.071 1.05l-3.992 4.99a.75.75 0 0 1-1.08.02L4.324 8.384a.75.75 0 1 1 1.06-1.06l2.094 2.093 3.473-4.425z"/>
+                        </svg>
+                        <span style={styles.checklistCountText}>
+                          {backlog.checklist.filter(item => item.completed).length}/{backlog.checklist.length}
+                        </span>
                       </div>
                     )}
 
@@ -704,13 +799,14 @@ export default function BacklogsPage() {
                           </button>
                         )}
                         <button
-                          style={{...styles.actionBtn, ...styles.actionBtnEdit}}
+                          style={{...styles.actionBtn, ...styles.actionBtnView}}
                           onClick={() => handleEdit(backlog)}
                         >
                           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
-                            <path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207zm1.586 3L10.5 3.207 4 9.707V10h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.293zm-9.761 5.175-.106.106-1.528 3.821 3.821-1.528.106-.106A.5.5 0 0 1 5 12.5V12h-.5a.5.5 0 0 1-.5-.5V11h-.5a.5.5 0 0 1-.468-.325"/>
+                            <path d="M16 8s-3-5.5-8-5.5S0 8 0 8s3 5.5 8 5.5S16 8 16 8M1.173 8a13 13 0 0 1 1.66-2.043C4.12 4.668 5.88 3.5 8 3.5s3.879 1.168 5.168 2.457A13 13 0 0 1 14.828 8q-.086.13-.195.288c-.335.48-.83 1.12-1.465 1.755C11.879 11.332 10.119 12.5 8 12.5s-3.879-1.168-5.168-2.457A13 13 0 0 1 1.172 8z"/>
+                            <path d="M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5M4.5 8a3.5 3.5 0 1 1 7 0 3.5 3.5 0 0 1-7 0"/>
                           </svg>
-                          Edit
+                          View
                         </button>
                         <button
                           style={{...styles.actionBtn, ...styles.actionBtnDelete}}
@@ -737,7 +833,7 @@ export default function BacklogsPage() {
             <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
               <div style={styles.modalHeader}>
                 <h2 style={styles.modalTitle}>
-                  {editingBacklog ? 'Edit Backlog Item' : 'Add Backlog Item'}
+                  {editingBacklog ? 'View Backlog Item' : 'Add Backlog Item'}
                 </h2>
                 <button style={styles.modalClose} onClick={() => { setShowModal(false); resetForm(); }}>
                   <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
@@ -755,17 +851,6 @@ export default function BacklogsPage() {
                     onChange={(e) => setFormData({ ...formData, title: e.target.value })}
                     placeholder="Enter backlog title"
                     required
-                  />
-                </div>
-
-                <div style={styles.formGroup}>
-                  <label style={styles.label}>DESCRIPTION</label>
-                  <textarea
-                    style={styles.textarea}
-                    value={formData.description}
-                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                    placeholder="Enter description (optional)"
-                    rows={3}
                   />
                 </div>
 
@@ -841,6 +926,73 @@ export default function BacklogsPage() {
                   )}
                 </div>
 
+                <div style={styles.formGroup}>
+                  <label style={styles.label}>DESCRIPTION</label>
+                  <textarea
+                    style={styles.textarea}
+                    value={formData.description}
+                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                    placeholder="Enter description (optional)"
+                    rows={3}
+                  />
+                </div>
+
+                {/* Checklist Section */}
+                <div style={styles.formGroup}>
+                  <label style={styles.label}>CHECKLIST</label>
+                  <div style={styles.checklistInputRow}>
+                    <input
+                      type="text"
+                      style={styles.checklistInput}
+                      value={newChecklistItem}
+                      onChange={(e) => setNewChecklistItem(e.target.value)}
+                      onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addChecklistItem())}
+                      placeholder="Add checklist item..."
+                    />
+                    <button
+                      type="button"
+                      style={styles.addChecklistBtn}
+                      onClick={addChecklistItem}
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                        <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4"/>
+                      </svg>
+                    </button>
+                  </div>
+                  {formData.checklist.length > 0 && (
+                    <div style={styles.checklistItems}>
+                      {formData.checklist.map((item) => (
+                        <div key={item.id} style={styles.checklistItem}>
+                          <label style={styles.checklistLabel}>
+                            <input
+                              type="checkbox"
+                              checked={item.completed}
+                              onChange={() => toggleChecklistItem(item.id)}
+                              style={styles.checklistCheckbox}
+                            />
+                            <span style={{
+                              ...styles.checklistText,
+                              textDecoration: item.completed ? 'line-through' : 'none',
+                              color: item.completed ? '#9ca3af' : '#1f2937',
+                            }}>
+                              {item.text}
+                            </span>
+                          </label>
+                          <button
+                            type="button"
+                            style={styles.removeChecklistBtn}
+                            onClick={() => removeChecklistItem(item.id)}
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
+                              <path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8z"/>
+                            </svg>
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
                 <div style={styles.formRow}>
                   <div style={styles.formGroup}>
                     <label style={styles.label}>PRIORITY</label>
@@ -871,6 +1023,28 @@ export default function BacklogsPage() {
                           </option>
                         ))}
                     </select>
+                  </div>
+                </div>
+
+                <div style={styles.formRow}>
+                  <div style={styles.formGroup}>
+                    <label style={styles.label}>START DATE</label>
+                    <input
+                      type="date"
+                      style={styles.input}
+                      value={formData.startDate}
+                      onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
+                    />
+                  </div>
+
+                  <div style={styles.formGroup}>
+                    <label style={styles.label}>END DATE</label>
+                    <input
+                      type="date"
+                      style={styles.input}
+                      value={formData.endDate}
+                      onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
+                    />
                   </div>
                 </div>
 
@@ -1410,6 +1584,15 @@ const styles: { [key: string]: React.CSSProperties } = {
     WebkitLineClamp: 2,
     WebkitBoxOrient: 'vertical',
   },
+  dateRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+  },
+  dateText: {
+    fontSize: '13px',
+    color: '#6b7280',
+  },
   sprintRow: {
     display: 'flex',
     alignItems: 'center',
@@ -1468,7 +1651,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     borderColor: '#9ca3af',
     color: '#6b7280',
   },
-  actionBtnEdit: {
+  actionBtnView: {
     borderColor: '#879BFF',
     color: '#879BFF',
   },
@@ -1588,6 +1771,85 @@ const styles: { [key: string]: React.CSSProperties } = {
     outline: 'none',
     resize: 'vertical',
     fontFamily: 'inherit',
+  },
+  // Checklist styles
+  checklistInputRow: {
+    display: 'flex',
+    gap: '8px',
+  },
+  checklistInput: {
+    flex: 1,
+    padding: '10px 14px',
+    border: '1px solid #e5e7eb',
+    borderRadius: '8px',
+    fontSize: '14px',
+    outline: 'none',
+  },
+  addChecklistBtn: {
+    padding: '10px 14px',
+    background: '#879BFF',
+    color: 'white',
+    border: 'none',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checklistItems: {
+    marginTop: '12px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+    maxHeight: '200px',
+    overflowY: 'auto',
+  },
+  checklistItem: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: '10px 12px',
+    background: '#f9fafb',
+    borderRadius: '8px',
+    border: '1px solid #e5e7eb',
+  },
+  checklistLabel: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    flex: 1,
+    cursor: 'pointer',
+  },
+  checklistCheckbox: {
+    width: '18px',
+    height: '18px',
+    cursor: 'pointer',
+    accentColor: '#879BFF',
+  },
+  checklistText: {
+    fontSize: '14px',
+  },
+  removeChecklistBtn: {
+    padding: '4px',
+    background: 'transparent',
+    border: 'none',
+    color: '#9ca3af',
+    cursor: 'pointer',
+    borderRadius: '4px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // Checklist count on cards
+  checklistCount: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+  },
+  checklistCountText: {
+    fontSize: '13px',
+    color: '#6b7280',
+    fontWeight: '500',
   },
   select: {
     padding: '12px 14px',

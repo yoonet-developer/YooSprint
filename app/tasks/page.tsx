@@ -4,6 +4,12 @@ import { useState, useEffect, useRef, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import AppLayout from '@/components/shared/AppLayout';
 
+interface ChecklistItem {
+  id: string;
+  text: string;
+  completed: boolean;
+}
+
 interface Backlog {
   _id: string;
   title: string;
@@ -24,6 +30,9 @@ interface Backlog {
     startDate: string;
     endDate: string;
   };
+  startDate?: string;
+  endDate?: string;
+  checklist?: ChecklistItem[];
   createdAt: string;
   updatedAt?: string;
 }
@@ -34,12 +43,12 @@ function TasksPageContent() {
   const [tasks, setTasks] = useState<Backlog[]>([]);
   const [filteredTasks, setFilteredTasks] = useState<Backlog[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState('all');
+  const [filter, setFilter] = useState('todo');
   const [searchQuery, setSearchQuery] = useState('');
   const [currentUserId, setCurrentUserId] = useState<string>('');
   const [currentPage, setCurrentPage] = useState(1);
   const [highlightedTaskId, setHighlightedTaskId] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>('grid');
   const [showSuccessToast, setShowSuccessToast] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
   const taskRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
@@ -228,6 +237,34 @@ function TasksPageContent() {
     } catch (error) {
       console.error('Error updating task status:', error);
       alert('Error updating task status');
+    }
+  };
+
+  const toggleChecklistItem = async (taskId: string, checklistItemId: string) => {
+    const task = tasks.find(t => t._id === taskId);
+    if (!task || !task.checklist) return;
+
+    const updatedChecklist = task.checklist.map(item =>
+      item.id === checklistItemId ? { ...item, completed: !item.completed } : item
+    );
+
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`/api/backlogs/${taskId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({ checklist: updatedChecklist }),
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        fetchMyTasks();
+      }
+    } catch (error) {
+      console.error('Error updating checklist:', error);
     }
   };
 
@@ -557,17 +594,56 @@ function TasksPageContent() {
                       <p style={styles.noDescription}>No description provided</p>
                     )}
 
-                    {/* Sprint Info */}
-                    {task.sprint && (
-                      <div style={styles.sprintInfo}>
+                    {/* Checklist */}
+                    {task.checklist && task.checklist.length > 0 && (
+                      <div style={styles.taskChecklist}>
+                        <div style={styles.checklistHeader}>
+                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="#6b7280" viewBox="0 0 16 16">
+                            <path d="M14 1a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1zM2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2z"/>
+                            <path d="M10.97 4.97a.75.75 0 0 1 1.071 1.05l-3.992 4.99a.75.75 0 0 1-1.08.02L4.324 8.384a.75.75 0 1 1 1.06-1.06l2.094 2.093 3.473-4.425z"/>
+                          </svg>
+                          <span style={styles.checklistHeaderText}>
+                            {task.checklist.filter(item => item.completed).length}/{task.checklist.length} completed
+                          </span>
+                        </div>
+                        <div style={styles.checklistProgressBar}>
+                          <div
+                            style={{
+                              ...styles.checklistProgressFill,
+                              width: `${(task.checklist.filter(item => item.completed).length / task.checklist.length) * 100}%`,
+                            }}
+                          />
+                        </div>
+                        <div style={styles.checklistItemsList}>
+                          {task.checklist.map((item) => (
+                            <label key={item.id} style={styles.checklistItemLabel}>
+                              <input
+                                type="checkbox"
+                                checked={item.completed}
+                                onChange={() => toggleChecklistItem(task._id, item.id)}
+                                style={styles.checklistItemCheckbox}
+                              />
+                              <span style={{
+                                ...styles.checklistItemText,
+                                textDecoration: item.completed ? 'line-through' : 'none',
+                                color: item.completed ? '#9ca3af' : '#4b5563',
+                              }}>
+                                {item.text}
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Task Due Date */}
+                    {task.endDate && (
+                      <div style={styles.dueDateRow}>
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="#6b7280" viewBox="0 0 16 16">
-                          <path d="M8 3.5a.5.5 0 0 0-1 0V9a.5.5 0 0 0 .252.434l3.5 2a.5.5 0 0 0 .496-.868L8 8.71V3.5z"/>
-                          <path d="M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16zm7-8A7 7 0 1 1 1 8a7 7 0 0 1 14 0z"/>
+                          <path d="M3.5 0a.5.5 0 0 1 .5.5V1h8V.5a.5.5 0 0 1 1 0V1h1a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2h1V.5a.5.5 0 0 1 .5-.5M1 4v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V4z"/>
                         </svg>
-                        <span style={styles.sprintName}>{task.sprint.name}</span>
-                        {task.sprint.endDate && (
-                          <span style={styles.sprintDate}>• Ends {formatDate(task.sprint.endDate)}</span>
-                        )}
+                        <span style={styles.dueDateLabel}>Due:</span>
+                        <span style={styles.dueDateValue}>{formatDate(task.endDate)}</span>
                       </div>
                     )}
 
@@ -941,6 +1017,78 @@ const styles: { [key: string]: React.CSSProperties } = {
     color: '#94a3b8',
     fontStyle: 'italic',
     margin: 0,
+  },
+  dueDateRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    fontSize: '13px',
+    color: '#64748b',
+  },
+  dueDateLabel: {
+    fontWeight: '500',
+    color: '#64748b',
+  },
+  dueDateValue: {
+    fontWeight: '600',
+    color: '#1e293b',
+  },
+  // Checklist styles
+  taskChecklist: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+    padding: '12px',
+    background: '#f8fafc',
+    borderRadius: '8px',
+    border: '1px solid #e2e8f0',
+  },
+  checklistHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+  },
+  checklistHeaderText: {
+    fontSize: '13px',
+    color: '#64748b',
+    fontWeight: '500',
+  },
+  checklistProgressBar: {
+    width: '100%',
+    height: '6px',
+    background: '#e2e8f0',
+    borderRadius: '3px',
+    overflow: 'hidden',
+  },
+  checklistProgressFill: {
+    height: '100%',
+    background: 'linear-gradient(135deg, #879BFF 0%, #FF6495 100%)',
+    borderRadius: '3px',
+    transition: 'width 0.3s ease',
+  },
+  checklistItemsList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
+    maxHeight: '120px',
+    overflowY: 'auto',
+  },
+  checklistItemLabel: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    cursor: 'pointer',
+    padding: '4px 0',
+  },
+  checklistItemCheckbox: {
+    width: '16px',
+    height: '16px',
+    cursor: 'pointer',
+    accentColor: '#879BFF',
+  },
+  checklistItemText: {
+    fontSize: '13px',
+    lineHeight: '1.4',
   },
   sprintInfo: {
     display: 'flex',
