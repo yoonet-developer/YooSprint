@@ -5,6 +5,7 @@ import AppLayout from '@/components/shared/AppLayout';
 
 interface User {
   _id: string;
+  yoonetId: string;
   username: string;
   name: string;
   email: string;
@@ -13,6 +14,7 @@ interface User {
   department: string;
   isActive: boolean;
   createdAt: string;
+  avatar?: string;
 }
 
 export default function TeamPage() {
@@ -28,25 +30,33 @@ export default function TeamPage() {
   const [showEditDepartmentInput, setShowEditDepartmentInput] = useState(false);
   const [newDepartment, setNewDepartment] = useState('');
   const [addFormData, setAddFormData] = useState({
+    yoonetId: '',
     username: '',
     name: '',
+    email: '',
     position: '',
     department: '',
     password: '',
     role: 'member' as 'super-admin' | 'admin' | 'manager' | 'member',
+    pin: '',
   });
   const [editFormData, setEditFormData] = useState({
+    yoonetId: '',
     username: '',
     name: '',
+    email: '',
     position: '',
     department: '',
     role: 'member' as 'super-admin' | 'admin' | 'manager' | 'member',
     newPassword: '',
+    newPin: '',
   });
   const [showToggleConfirmModal, setShowToggleConfirmModal] = useState(false);
   const [userToToggle, setUserToToggle] = useState<{ id: string; name: string; currentStatus: boolean } | null>(null);
   const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
   const [userToDelete, setUserToDelete] = useState<{ id: string; name: string } | null>(null);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [successMessage, setSuccessMessage] = useState('');
 
   useEffect(() => {
     const userData = localStorage.getItem('user');
@@ -87,6 +97,7 @@ export default function TeamPage() {
 
   const handleAddMember = async (e: React.FormEvent) => {
     e.preventDefault();
+
     try {
       const token = localStorage.getItem('token');
       const response = await fetch('/api/users', {
@@ -96,12 +107,15 @@ export default function TeamPage() {
           'Authorization': `Bearer ${token}`,
         },
         body: JSON.stringify({
+          yoonetId: addFormData.yoonetId,
           username: addFormData.username,
           name: addFormData.name,
+          email: addFormData.email,
           position: addFormData.position,
           department: addFormData.department,
           password: addFormData.password,
           role: addFormData.role,
+          pin: addFormData.pin || undefined,
         }),
       });
 
@@ -128,8 +142,10 @@ export default function TeamPage() {
 
       // Prepare update data - only include password if it's been set
       const updateData: any = {
+        yoonetId: editFormData.yoonetId,
         username: editFormData.username,
         name: editFormData.name,
+        email: editFormData.email,
         position: editFormData.position,
         department: editFormData.department,
         role: editFormData.role,
@@ -138,6 +154,12 @@ export default function TeamPage() {
       // Only include password if a new one was provided
       if (editFormData.newPassword && editFormData.newPassword.trim() !== '') {
         updateData.password = editFormData.newPassword;
+      }
+
+      // Only include PIN for privileged roles if a new PIN was entered
+      const isPrivilegedRole = ['super-admin', 'admin', 'manager'].includes(editFormData.role);
+      if (isPrivilegedRole && editFormData.newPin && editFormData.newPin.trim() !== '') {
+        updateData.pin = editFormData.newPin;
       }
 
       const response = await fetch(`/api/users/${editingUser._id}`, {
@@ -154,8 +176,17 @@ export default function TeamPage() {
         setShowEditModal(false);
         setEditingUser(null);
         fetchUsers();
-        if (updateData.password) {
-          alert('Member updated successfully! Password has been changed.');
+
+        // Show success message based on what was updated
+        if (updateData.pin && updateData.password) {
+          setSuccessMessage('Member updated successfully! Password and PIN have been changed.');
+          setShowSuccessModal(true);
+        } else if (updateData.pin) {
+          setSuccessMessage('Member updated successfully! PIN has been changed.');
+          setShowSuccessModal(true);
+        } else if (updateData.password) {
+          setSuccessMessage('Member updated successfully! Password has been changed.');
+          setShowSuccessModal(true);
         }
       } else {
         alert(data.message || 'Error updating member');
@@ -233,24 +264,30 @@ export default function TeamPage() {
   const openEditModal = (user: User) => {
     setEditingUser(user);
     setEditFormData({
+      yoonetId: user.yoonetId || '',
       username: user.username,
       name: user.name,
+      email: user.email || '',
       position: user.position,
       department: user.department || '',
       role: user.role,
       newPassword: '',
+      newPin: '',
     });
     setShowEditModal(true);
   };
 
   const openAddModal = () => {
     setAddFormData({
+      yoonetId: '',
       username: '',
       name: '',
+      email: '',
       position: '',
       department: currentUserRole === 'super-admin' ? '' : currentUserDepartment,
       password: '',
       role: 'member',
+      pin: '',
     });
     setShowAddDepartmentInput(false);
     setNewDepartment('');
@@ -259,12 +296,15 @@ export default function TeamPage() {
 
   const resetAddForm = () => {
     setAddFormData({
+      yoonetId: '',
       username: '',
       name: '',
+      email: '',
       position: '',
       department: currentUserRole === 'super-admin' ? '' : currentUserDepartment,
       password: '',
       role: 'member',
+      pin: '',
     });
     setShowAddDepartmentInput(false);
     setNewDepartment('');
@@ -363,9 +403,17 @@ export default function TeamPage() {
             .map((user) => (
             <div key={user._id} style={styles.userCard}>
               <div style={styles.userHeader}>
-                <div style={styles.userAvatar}>
-                  {user.name.charAt(0).toUpperCase()}
-                </div>
+                {user.avatar ? (
+                  <img
+                    src={user.avatar}
+                    alt={user.name}
+                    style={styles.userAvatarImage}
+                  />
+                ) : (
+                  <div style={styles.userAvatar}>
+                    {user.name.charAt(0).toUpperCase()}
+                  </div>
+                )}
                 <span
                   style={{
                     ...styles.roleBadge,
@@ -382,8 +430,16 @@ export default function TeamPage() {
 
               <div style={styles.userInfo}>
                 <div style={styles.infoItem}>
+                  <strong>Yoonet ID:</strong> {user.yoonetId}
+                </div>
+                <div style={styles.infoItem}>
                   <strong>Username:</strong> {user.username}
                 </div>
+                {user.email && (
+                  <div style={styles.infoItem}>
+                    <strong>Email:</strong> {user.email}
+                  </div>
+                )}
                 <div style={styles.infoItem}>
                   <strong>Joined:</strong> {formatDate(user.createdAt)}
                 </div>
@@ -424,6 +480,19 @@ export default function TeamPage() {
               <h2 style={styles.modalTitle}>Add Team Member</h2>
               <form onSubmit={handleAddMember} style={styles.form}>
                 <div style={styles.formGroup}>
+                  <label style={styles.label}>Yoonet ID *</label>
+                  <input
+                    type="text"
+                    style={styles.input}
+                    value={addFormData.yoonetId}
+                    onChange={(e) => setAddFormData({ ...addFormData, yoonetId: e.target.value.toUpperCase() })}
+                    required
+                    placeholder="e.g., YN001"
+                  />
+                  <small style={styles.helpText}>Unique identifier for this user</small>
+                </div>
+
+                <div style={styles.formGroup}>
                   <label style={styles.label}>Username *</label>
                   <input
                     type="text"
@@ -448,6 +517,18 @@ export default function TeamPage() {
                     required
                     placeholder="e.g., John Doe"
                   />
+                </div>
+
+                <div style={styles.formGroup}>
+                  <label style={styles.label}>Email</label>
+                  <input
+                    type="email"
+                    style={styles.input}
+                    value={addFormData.email}
+                    onChange={(e) => setAddFormData({ ...addFormData, email: e.target.value })}
+                    placeholder="e.g., john@company.com"
+                  />
+                  <small style={styles.helpText}>Used for login verification code</small>
                 </div>
 
                 <div style={styles.formGroup}>
@@ -540,13 +621,28 @@ export default function TeamPage() {
                     <select
                       style={styles.input}
                       value={addFormData.role}
-                      onChange={(e) => setAddFormData({ ...addFormData, role: e.target.value as any })}
+                      onChange={(e) => setAddFormData({ ...addFormData, role: e.target.value as any, pin: '' })}
                     >
                       <option value="member">Team Member</option>
                       <option value="manager">Manager</option>
                       <option value="admin">Admin</option>
                       <option value="super-admin">Super Admin</option>
                     </select>
+                  </div>
+                )}
+
+                {['super-admin', 'admin', 'manager'].includes(addFormData.role) && (
+                  <div style={styles.formGroup}>
+                    <label style={styles.label}>Login PIN</label>
+                    <input
+                      type="password"
+                      style={styles.input}
+                      value={addFormData.pin}
+                      onChange={(e) => setAddFormData({ ...addFormData, pin: e.target.value.replace(/\D/g, '').slice(0, 4) })}
+                      placeholder="4-digit PIN"
+                      maxLength={4}
+                    />
+                    <small style={styles.helpText}>4-digit PIN for secure login (optional)</small>
                   </div>
                 )}
 
@@ -577,6 +673,19 @@ export default function TeamPage() {
               <h2 style={styles.modalTitle}>Edit Team Member</h2>
               <form onSubmit={handleEditMember} style={styles.form}>
                 <div style={styles.formGroup}>
+                  <label style={styles.label}>Yoonet ID *</label>
+                  <input
+                    type="text"
+                    style={styles.input}
+                    value={editFormData.yoonetId}
+                    onChange={(e) => setEditFormData({ ...editFormData, yoonetId: e.target.value.toUpperCase() })}
+                    required
+                    placeholder="e.g., YN001"
+                  />
+                  <small style={styles.helpText}>Unique identifier for this user</small>
+                </div>
+
+                <div style={styles.formGroup}>
                   <label style={styles.label}>Username *</label>
                   <input
                     type="text"
@@ -598,6 +707,17 @@ export default function TeamPage() {
                     value={editFormData.name}
                     onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
                     required
+                  />
+                </div>
+
+                <div style={styles.formGroup}>
+                  <label style={styles.label}>Email</label>
+                  <input
+                    type="email"
+                    style={styles.input}
+                    value={editFormData.email}
+                    onChange={(e) => setEditFormData({ ...editFormData, email: e.target.value })}
+                    placeholder="e.g., john@company.com"
                   />
                 </div>
 
@@ -701,6 +821,23 @@ export default function TeamPage() {
                   </small>
                 </div>
 
+                {['super-admin', 'admin', 'manager'].includes(editFormData.role) && (
+                  <div style={styles.formGroup}>
+                    <label style={styles.label}>Change PIN</label>
+                    <input
+                      type="password"
+                      style={styles.input}
+                      value={editFormData.newPin}
+                      onChange={(e) => setEditFormData({ ...editFormData, newPin: e.target.value.replace(/\D/g, '').slice(0, 4) })}
+                      placeholder="Leave blank to keep current PIN"
+                      maxLength={4}
+                    />
+                    <small style={styles.helpText}>
+                      {editFormData.newPin ? 'PIN must be 4 digits' : 'Only fill this to set or change the PIN'}
+                    </small>
+                  </div>
+                )}
+
                 <div style={styles.formActions}>
                   <button type="submit" style={styles.primaryButton}>
                     Update Member
@@ -798,6 +935,23 @@ export default function TeamPage() {
             </div>
           </div>
         )}
+
+        {/* Success Modal */}
+        {showSuccessModal && (
+          <div style={styles.modalOverlay} onClick={() => setShowSuccessModal(false)}>
+            <div style={styles.successModal} onClick={(e) => e.stopPropagation()}>
+              <div style={styles.successIcon}>✓</div>
+              <h2 style={styles.successTitle}>Success!</h2>
+              <p style={styles.successText}>{successMessage}</p>
+              <button
+                style={styles.successButton}
+                onClick={() => setShowSuccessModal(false)}
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </AppLayout>
   );
@@ -861,6 +1015,13 @@ const styles: { [key: string]: React.CSSProperties } = {
     justifyContent: 'center',
     fontSize: '24px',
     fontWeight: 'bold',
+  },
+  userAvatarImage: {
+    width: '60px',
+    height: '60px',
+    borderRadius: '50%',
+    objectFit: 'cover' as const,
+    border: '3px solid #e5e7eb',
   },
   roleBadge: {
     padding: '6px 12px',
@@ -1076,5 +1237,50 @@ const styles: { [key: string]: React.CSSProperties } = {
     borderRadius: '6px',
     borderLeft: '3px solid #9b2c2c',
     fontWeight: '600',
+  },
+  successModal: {
+    background: 'white',
+    borderRadius: '16px',
+    padding: '40px',
+    width: '90%',
+    maxWidth: '400px',
+    boxShadow: '0 10px 40px rgba(0, 0, 0, 0.2)',
+    textAlign: 'center' as const,
+  },
+  successIcon: {
+    width: '60px',
+    height: '60px',
+    borderRadius: '50%',
+    background: 'linear-gradient(135deg, #48bb78 0%, #38a169 100%)',
+    color: 'white',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '28px',
+    fontWeight: 'bold',
+    margin: '0 auto 20px',
+  },
+  successTitle: {
+    fontSize: '24px',
+    fontWeight: '600',
+    color: '#2d3748',
+    marginBottom: '12px',
+  },
+  successText: {
+    fontSize: '16px',
+    color: '#4a5568',
+    marginBottom: '24px',
+    lineHeight: '1.5',
+  },
+  successButton: {
+    padding: '12px 32px',
+    background: 'linear-gradient(135deg, #48bb78 0%, #38a169 100%)',
+    color: 'white',
+    border: 'none',
+    borderRadius: '8px',
+    fontSize: '16px',
+    fontWeight: '600',
+    cursor: 'pointer',
+    transition: 'transform 0.2s, box-shadow 0.2s',
   },
 };

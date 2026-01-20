@@ -11,11 +11,20 @@ interface User {
   position: string;
 }
 
+interface Project {
+  _id: string;
+  name: string;
+  category: string;
+  estimatedTime: number;
+  timeConsumed: number;
+  progress: number;
+}
+
 interface Backlog {
   _id: string;
   title: string;
   description?: string;
-  project: string;
+  project?: Project;
   taskStatus: string;
   status: string;
   priority: 'low' | 'medium' | 'high';
@@ -23,6 +32,7 @@ interface Backlog {
     _id: string;
     name: string;
     email: string;
+    avatar?: string;
   };
   sprint?: {
     _id: string;
@@ -104,18 +114,24 @@ export default function BoardPage() {
     );
   }
 
-  const projects = Array.from(new Set(backlogs.map(b => b.project))).sort();
+  const projects = Array.from(
+    new Map(
+      backlogs
+        .filter(b => b.project && b.project._id)
+        .map(b => [b.project!._id, b.project!])
+    ).values()
+  ).sort((a, b) => a.name.localeCompare(b.name));
 
   // Filter sprints based on selected project
   const projectBacklogs = selectedProject === 'all'
     ? backlogs
-    : backlogs.filter(b => b.project === selectedProject);
+    : backlogs.filter(b => b.project?._id === selectedProject);
   const sprints = Array.from(new Set(projectBacklogs.map(b => b.sprint?.name).filter(Boolean))).sort();
   const hasBacklogsWithoutSprint = projectBacklogs.some(b => !b.sprint);
 
   let filteredBacklogs = backlogs;
   if (selectedProject !== 'all') {
-    filteredBacklogs = filteredBacklogs.filter(b => b.project === selectedProject);
+    filteredBacklogs = filteredBacklogs.filter(b => b.project?._id === selectedProject);
   }
   if (selectedSprint === 'no-sprint') {
     filteredBacklogs = filteredBacklogs.filter(b => !b.sprint);
@@ -157,7 +173,7 @@ export default function BoardPage() {
 
         <div style={styles.taskContent}>
           <div style={styles.taskMeta}>
-            <span style={styles.projectTag}>{task.project}</span>
+            <span style={styles.projectTag}>{task.project?.name || 'No Project'}</span>
             <span style={{
               ...styles.priorityBadge,
               background: priority.bg,
@@ -181,9 +197,17 @@ export default function BoardPage() {
           <div style={styles.taskFooter}>
             {task.assignee ? (
               <div style={styles.assigneeChip}>
-                <div style={styles.avatar}>
-                  {task.assignee.name.charAt(0).toUpperCase()}
-                </div>
+                {task.assignee.avatar ? (
+                  <img
+                    src={task.assignee.avatar}
+                    alt={task.assignee.name}
+                    style={styles.avatarImage}
+                  />
+                ) : (
+                  <div style={styles.avatar}>
+                    {task.assignee.name.charAt(0).toUpperCase()}
+                  </div>
+                )}
                 <span>{task.assignee.name}</span>
               </div>
             ) : (
@@ -302,7 +326,7 @@ export default function BoardPage() {
                 // Reset sprint filter if current sprint not available for new project
                 const newProjectBacklogs = newProject === 'all'
                   ? backlogs
-                  : backlogs.filter(b => b.project === newProject);
+                  : backlogs.filter(b => b.project?._id === newProject);
                 const availableSprints = newProjectBacklogs.map(b => b.sprint?.name).filter(Boolean);
                 if (selectedSprint !== 'all' && selectedSprint !== 'no-sprint' && !availableSprints.includes(selectedSprint)) {
                   setSelectedSprint('all');
@@ -311,7 +335,7 @@ export default function BoardPage() {
             >
               <option value="all">All Projects</option>
               {projects.map(project => (
-                <option key={project} value={project}>{project}</option>
+                <option key={project._id} value={project._id}>{project.name}</option>
               ))}
             </select>
           </div>
@@ -613,6 +637,13 @@ const styles: { [key: string]: React.CSSProperties } = {
     justifyContent: 'center',
     fontSize: '11px',
     fontWeight: '600',
+  },
+  avatarImage: {
+    width: '24px',
+    height: '24px',
+    borderRadius: '50%',
+    objectFit: 'cover' as const,
+    border: '1px solid #e5e7eb',
   },
   unassigned: {
     fontSize: '12px',

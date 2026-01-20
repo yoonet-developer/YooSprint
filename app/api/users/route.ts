@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
       filter = getDepartmentFilter(user);
     }
 
-    const users = await User.find(filter).select('-password').sort({ createdAt: -1 });
+    const users = await User.find(filter).select('-password -pin').sort({ createdAt: -1 });
     return successResponse({ users });
   } catch (error: any) {
     if (error.message === 'Unauthorized') {
@@ -43,11 +43,17 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { username, name, email, position, department, password, role } = body;
+    const { yoonetId, username, name, email, position, department, password, role, pin } = body;
 
     // Validate required fields
-    if (!username || !name || !position || !password) {
+    if (!yoonetId || !username || !name || !position || !password) {
       return errorResponse('Missing required fields', 400);
+    }
+
+    // Check if yoonetId already exists
+    const existingYoonetId = await User.findOne({ yoonetId });
+    if (existingYoonetId) {
+      return errorResponse('Yoonet ID already exists', 400);
     }
 
     // Check if username already exists
@@ -59,20 +65,33 @@ export async function POST(request: NextRequest) {
     // Automatically set department from auth user if not provided (for non-super-admins)
     const userDepartment = department || (authUser.role !== 'super-admin' ? authUser.department : '');
 
-    // Create user (password will be hashed by the pre-save hook in the model)
-    const user = await User.create({
+    // Determine user role
+    const userRole = role || 'member';
+    const isPrivilegedRole = ['super-admin', 'admin', 'manager'].includes(userRole);
+
+    // Create user data
+    const userData: any = {
+      yoonetId,
       username,
       name,
       email: email || `${username}@company.com`, // Default email if not provided
       position,
       department: userDepartment,
       password, // Will be hashed by model pre-save hook
-      role: role || 'member',
+      role: userRole,
       isActive: true,
-    });
+    };
 
-    // Return user without password
-    const userWithoutPassword = await User.findById(user._id).select('-password');
+    // Add PIN for privileged roles if provided
+    if (isPrivilegedRole && pin) {
+      userData.pin = pin;
+    }
+
+    // Create user (password will be hashed by the pre-save hook in the model)
+    const user = await User.create(userData);
+
+    // Return user without password and pin
+    const userWithoutPassword = await User.findById(user._id).select('-password -pin');
     return successResponse({ user: userWithoutPassword }, 201);
   } catch (error: any) {
     if (error.message === 'Unauthorized') {

@@ -23,6 +23,8 @@ export async function GET(request: NextRequest) {
         email: user.email,
         role: user.role,
         position: user.position,
+        department: user.department,
+        avatar: user.avatar,
       },
     });
   } catch (error) {

@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
     // Filter by department unless user is super-admin
     const filter = getDepartmentFilter(user);
 
-    const tasks = await Task.find(filter).populate('assignee', 'name email department').sort({ createdAt: -1 });
+    const tasks = await Task.find(filter).populate('assignee', 'name email department avatar').sort({ createdAt: -1 });
     return successResponse({ tasks });
   } catch (error: any) {
     if (error.message === 'Unauthorized') {
@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
       createdBy: user._id,
     });
 
-    const populatedTask = await Task.findById(task._id).populate('assignee', 'name email department');
+    const populatedTask = await Task.findById(task._id).populate('assignee', 'name email department avatar');
     return successResponse({ task: populatedTask }, 201);
   } catch (error: any) {
     if (error.message === 'Unauthorized') {
