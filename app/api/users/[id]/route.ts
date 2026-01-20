@@ -9,7 +9,7 @@ export async function GET(
   try {
     const currentUser = await requireAuth(request);
     const { id } = await params;
-    const user = await User.findById(id).select('-password');
+    const user = await User.findById(id).select('-password -pin');
 
     if (!user) {
       return errorResponse('User not found', 404);
@@ -60,12 +60,15 @@ export async function PUT(
     const passwordChanged = body.password !== undefined && body.password.trim() !== '';
 
     // Update user fields
+    if (body.yoonetId !== undefined) existingUser.yoonetId = body.yoonetId;
     if (body.username !== undefined) existingUser.username = body.username;
     if (body.name !== undefined) existingUser.name = body.name;
+    if (body.email !== undefined) existingUser.email = body.email;
     if (body.position !== undefined) existingUser.position = body.position;
     if (body.department !== undefined) existingUser.department = body.department;
     if (body.role !== undefined) existingUser.role = body.role;
     if (body.isActive !== undefined) existingUser.isActive = body.isActive;
+    if (body.avatar !== undefined) existingUser.avatar = body.avatar;
 
     // Only update password if provided (this will trigger the pre-save hook for hashing)
     if (passwordChanged) {
@@ -75,8 +78,15 @@ export async function PUT(
     // Save the user (this triggers the pre-save hook for password hashing)
     await existingUser.save();
 
-    // Return user without password
-    const user = await User.findById(id).select('-password');
+    // Handle PIN update for privileged roles separately (since pin has select: false)
+    const isPrivilegedRole = ['super-admin', 'admin', 'manager'].includes(existingUser.role);
+    if (isPrivilegedRole && body.pin !== undefined && body.pin !== '') {
+      // Use findByIdAndUpdate to set PIN directly since it's not selected by default
+      await User.findByIdAndUpdate(id, { $set: { pin: body.pin } });
+    }
+
+    // Return user without password and pin
+    const user = await User.findById(id).select('-password -pin');
 
     return successResponse({ user });
   } catch (error: any) {

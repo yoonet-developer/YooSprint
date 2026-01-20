@@ -2,19 +2,31 @@
 
 import { useState, useEffect } from 'react';
 import AppLayout from '@/components/shared/AppLayout';
+import { cardFrames, getSelectedFrame } from '@/lib/utils/cardFrames';
+
+interface Project {
+  _id: string;
+  name: string;
+  category: string;
+  estimatedTime: number;
+  timeConsumed: number;
+  progress: number;
+}
 
 interface Backlog {
   _id: string;
   title: string;
   description?: string;
   priority: string;
-  project: string;
+  project?: Project;
   taskStatus: string;
   sprint?: string | { _id: string; name: string };
   assignee?: {
     name: string;
     email: string;
+    avatar?: string;
   };
+  timeTracked?: number;
 }
 
 interface User {
@@ -23,6 +35,7 @@ interface User {
   email: string;
   position: string;
   role: string;
+  avatar?: string;
 }
 
 interface Sprint {
@@ -32,7 +45,7 @@ interface Sprint {
   startDate: string;
   endDate: string;
   status: 'planned' | 'active' | 'completed';
-  project?: string;
+  project?: Project;
   managers?: User[];
   createdAt: string;
   backlogItems?: Backlog[];
@@ -49,12 +62,15 @@ export default function SprintsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
   const [showBacklogsModal, setShowBacklogsModal] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
   const [showIncompleteWarningModal, setShowIncompleteWarningModal] = useState(false);
   const [incompleteWarningMessage, setIncompleteWarningMessage] = useState('');
   const [deletingSprint, setDeletingSprint] = useState<Sprint | null>(null);
+  const [selectedSprintIds, setSelectedSprintIds] = useState<string[]>([]);
+  const [selectionMode, setSelectionMode] = useState(false);
   const [editingSprint, setEditingSprint] = useState<Sprint | null>(null);
   const [backlogSearch, setBacklogSearch] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
@@ -70,11 +86,18 @@ export default function SprintsPage() {
     managerIds: [] as string[],
   });
 
+  // Theme state
+  const [selectedFrame, setSelectedFrame] = useState<string>('default');
+
   useEffect(() => {
     const userData = localStorage.getItem('user');
     if (userData) {
       setCurrentUser(JSON.parse(userData));
     }
+
+    // Load selected frame from localStorage
+    const savedFrame = getSelectedFrame();
+    setSelectedFrame(savedFrame);
 
     fetchSprints();
     fetchBacklogs();
@@ -165,7 +188,7 @@ export default function SprintsPage() {
       filtered = filtered.filter(s =>
         s.name.toLowerCase().includes(query) ||
         s.goal?.toLowerCase().includes(query) ||
-        s.project?.toLowerCase().includes(query) ||
+        s.project?.name?.toLowerCase().includes(query) ||
         s.managers?.some(m => m.name.toLowerCase().includes(query))
       );
     }
@@ -317,6 +340,64 @@ export default function SprintsPage() {
     }
   };
 
+  const handleBulkDelete = async () => {
+    if (selectedSprintIds.length === 0) return;
+
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch('/api/sprints', {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({ ids: selectedSprintIds }),
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        setShowBulkDeleteModal(false);
+        setSelectedSprintIds([]);
+        fetchSprints();
+        fetchBacklogs();
+        showSuccess(`${data.deletedCount} sprint(s) deleted successfully!`);
+      } else {
+        alert(data.message || 'Error deleting sprints');
+      }
+    } catch (error) {
+      console.error('Error deleting sprints:', error);
+      alert('Error deleting sprints');
+    }
+  };
+
+  const toggleSprintSelection = (sprintId: string) => {
+    setSelectedSprintIds(prev =>
+      prev.includes(sprintId)
+        ? prev.filter(id => id !== sprintId)
+        : [...prev, sprintId]
+    );
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedSprintIds.length === paginatedSprints.length) {
+      setSelectedSprintIds([]);
+    } else {
+      setSelectedSprintIds(paginatedSprints.map(s => s._id));
+    }
+  };
+
+  const clearSelection = () => {
+    setSelectedSprintIds([]);
+    setSelectionMode(false);
+  };
+
+  const toggleSelectionMode = () => {
+    if (selectionMode) {
+      setSelectedSprintIds([]);
+    }
+    setSelectionMode(!selectionMode);
+  };
+
   const resetForm = () => {
     setFormData({
       name: '',
@@ -377,7 +458,7 @@ export default function SprintsPage() {
       .filter(b =>
         backlogSearch === '' ||
         b.title.toLowerCase().includes(backlogSearch.toLowerCase()) ||
-        b.project.toLowerCase().includes(backlogSearch.toLowerCase())
+        b.project?.name?.toLowerCase().includes(backlogSearch.toLowerCase())
       );
   };
 
@@ -408,6 +489,12 @@ export default function SprintsPage() {
     });
   };
 
+  const formatTimeTracked = (seconds: number) => {
+    if (!seconds || seconds === 0) return '0h';
+    const hours = seconds / 3600;
+    return hours % 1 === 0 ? `${hours}h` : `${hours.toFixed(2)}h`;
+  };
+
   const getDaysRemaining = (endDate: string) => {
     const end = new Date(endDate);
     const now = new Date();
@@ -429,8 +516,24 @@ export default function SprintsPage() {
     );
   }
 
+  // Get current frame style
+  const frameStyle = cardFrames[selectedFrame] || cardFrames.default;
+
   return (
     <AppLayout>
+      {/* Frame animations for theme */}
+      {(selectedFrame === 'rainbow' || selectedFrame === 'frost') && (
+        <style>{`
+          @keyframes rainbowShift {
+            0% { filter: hue-rotate(0deg); }
+            100% { filter: hue-rotate(360deg); }
+          }
+          .rainbow-frame {
+            animation: rainbowShift 3s linear infinite;
+          }
+        `}</style>
+      )}
+
       <div style={styles.container}>
         {/* Header Section */}
         <div style={styles.headerSection}>
@@ -609,6 +712,50 @@ export default function SprintsPage() {
           </div>
         )}
 
+        {/* Selection Bar */}
+        {currentUser?.role !== 'member' && paginatedSprints.length > 0 && (
+          selectionMode ? (
+            <div style={styles.selectionBar}>
+              <label style={styles.selectAllLabel}>
+                <input
+                  type="checkbox"
+                  checked={selectedSprintIds.length === paginatedSprints.length && paginatedSprints.length > 0}
+                  onChange={toggleSelectAll}
+                  style={styles.selectAllCheckbox}
+                />
+                <span>Select All</span>
+              </label>
+              <div style={styles.selectionActions}>
+                <span style={styles.selectedCount}>{selectedSprintIds.length} selected</span>
+                <button style={styles.clearSelectionBtn} onClick={clearSelection}>
+                  Cancel
+                </button>
+                {selectedSprintIds.length > 0 && (
+                  <button
+                    style={styles.bulkDeleteBtn}
+                    onClick={() => setShowBulkDeleteModal(true)}
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
+                      <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z"/>
+                      <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z"/>
+                    </svg>
+                    Delete Selected
+                  </button>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div style={styles.selectButtonRow}>
+              <button style={styles.selectModeBtn} onClick={toggleSelectionMode}>
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
+                  <path d="M14 1a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1zM2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2z"/>
+                </svg>
+                Select
+              </button>
+            </div>
+          )
+        )}
+
         {/* Sprint Items */}
         {filteredSprints.length === 0 ? (
           <div style={styles.emptyState}>
@@ -630,23 +777,44 @@ export default function SprintsPage() {
               return (
                 <div
                   key={sprint._id}
-                  style={viewMode === 'grid' ? styles.gridCard : styles.listCard}
+                  className={selectedFrame === 'rainbow' ? 'rainbow-frame' : selectedFrame === 'frost' ? 'frost-frame' : ''}
+                  style={{
+                    ...(viewMode === 'grid' ? styles.gridCard : styles.listCard),
+                    ...frameStyle,
+                  }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.borderColor = '#879BFF';
-                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(135, 155, 255, 0.15)';
+                    if (selectedFrame === 'default') {
+                      e.currentTarget.style.borderColor = '#879BFF';
+                      e.currentTarget.style.boxShadow = '0 4px 12px rgba(135, 155, 255, 0.15)';
+                    }
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.borderColor = '#e5e7eb';
-                    e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.05)';
+                    if (selectedFrame === 'default') {
+                      e.currentTarget.style.borderColor = '#e5e7eb';
+                      e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.05)';
+                    }
                   }}
                 >
-                  {/* Status Indicator */}
-                  <div style={{...styles.statusLine, backgroundColor: statusConfig.color}} />
+                  {/* Theme Accent Line */}
+                  <div style={{
+                    ...styles.statusLine,
+                    backgroundColor: frameStyle.accentGradient ? undefined : frameStyle.accentColor,
+                    background: frameStyle.accentGradient || frameStyle.accentColor,
+                  }} />
 
                   <div style={styles.cardContent}>
                     {/* Card Header */}
                     <div style={styles.cardHeader}>
                       <div style={styles.cardTitleRow}>
+                        {selectionMode && (
+                          <input
+                            type="checkbox"
+                            checked={selectedSprintIds.includes(sprint._id)}
+                            onChange={() => toggleSprintSelection(sprint._id)}
+                            onClick={(e) => e.stopPropagation()}
+                            style={styles.cardCheckbox}
+                          />
+                        )}
                         <h3 style={styles.cardTitle}>{sprint.name}</h3>
                         <span style={{
                           ...styles.statusBadge,
@@ -659,9 +827,12 @@ export default function SprintsPage() {
                     </div>
 
                     {/* Goal */}
-                    {sprint.goal && (
-                      <p style={styles.cardGoal}>{sprint.goal}</p>
-                    )}
+                    <p style={{
+                      ...styles.cardGoal,
+                      ...(sprint.goal ? {} : styles.noDescription)
+                    }}>
+                      {sprint.goal || 'No description'}
+                    </p>
 
                     {/* Sprint Info */}
                     <div style={styles.sprintInfo}>
@@ -694,9 +865,18 @@ export default function SprintsPage() {
                         <span style={styles.managersLabel}>Managers:</span>
                         <div style={styles.managerAvatars}>
                           {sprint.managers.slice(0, 3).map((manager, idx) => (
-                            <div key={manager._id} style={{...styles.avatar, marginLeft: idx > 0 ? '-8px' : 0}}>
-                              {manager.name.charAt(0)}
-                            </div>
+                            manager.avatar ? (
+                              <img
+                                key={manager._id}
+                                src={manager.avatar}
+                                alt={manager.name}
+                                style={{...styles.managerAvatarImage, marginLeft: idx > 0 ? '-8px' : 0}}
+                              />
+                            ) : (
+                              <div key={manager._id} style={{...styles.avatar, marginLeft: idx > 0 ? '-8px' : 0}}>
+                                {manager.name.charAt(0)}
+                              </div>
+                            )
                           ))}
                           {sprint.managers.length > 3 && (
                             <span style={styles.moreManagers}>+{sprint.managers.length - 3}</span>
@@ -917,7 +1097,7 @@ export default function SprintsPage() {
                                   </span>
                                 </div>
                                 <div style={styles.backlogMeta}>
-                                  <span style={styles.projectTag}>{backlog.project}</span>
+                                  <span style={styles.projectTag}>{backlog.project?.name || 'No Project'}</span>
                                   <span style={{
                                     ...styles.priorityBadge,
                                     backgroundColor:
@@ -928,6 +1108,27 @@ export default function SprintsPage() {
                                       backlog.priority === 'medium' ? '#f59e0b' : '#16a34a'
                                   }}>
                                     {backlog.priority}
+                                  </span>
+                                  <span style={styles.timeTrackedBadge}>
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="#64748b" viewBox="0 0 16 16">
+                                      <path d="M8 3.5a.5.5 0 0 0-1 0V9a.5.5 0 0 0 .252.434l3.5 2a.5.5 0 0 0 .496-.868L8 8.71z"/>
+                                      <path d="M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16m7-8A7 7 0 1 1 1 8a7 7 0 0 1 14 0"/>
+                                    </svg>
+                                    {formatTimeTracked(backlog.timeTracked || 0)}
+                                  </span>
+                                  <span style={styles.assigneeBadge}>
+                                    {backlog.assignee?.avatar ? (
+                                      <img
+                                        src={backlog.assignee.avatar}
+                                        alt={backlog.assignee.name}
+                                        style={styles.assigneeAvatarImage}
+                                      />
+                                    ) : (
+                                      <div style={styles.assigneeAvatar}>
+                                        {backlog.assignee?.name?.charAt(0) || '?'}
+                                      </div>
+                                    )}
+                                    {backlog.assignee?.name || 'Unassigned'}
                                   </span>
                                 </div>
                               </div>
@@ -1093,7 +1294,7 @@ export default function SprintsPage() {
                           <div style={styles.checkboxContent}>
                             <span style={styles.checkboxTitle}>{backlog.title}</span>
                             <div style={styles.backlogMeta}>
-                              <span style={styles.projectTag}>{backlog.project}</span>
+                              <span style={styles.projectTag}>{backlog.project?.name || 'No Project'}</span>
                               <span style={{
                                 ...styles.priorityBadge,
                                 backgroundColor:
@@ -1104,6 +1305,20 @@ export default function SprintsPage() {
                                   backlog.priority === 'medium' ? '#f59e0b' : '#16a34a'
                               }}>
                                 {backlog.priority}
+                              </span>
+                              <span style={styles.assigneeBadge}>
+                                {backlog.assignee?.avatar ? (
+                                  <img
+                                    src={backlog.assignee.avatar}
+                                    alt={backlog.assignee.name}
+                                    style={styles.assigneeAvatarImage}
+                                  />
+                                ) : (
+                                  <div style={styles.assigneeAvatar}>
+                                    {backlog.assignee?.name?.charAt(0) || '?'}
+                                  </div>
+                                )}
+                                {backlog.assignee?.name || 'Unassigned'}
                               </span>
                             </div>
                           </div>
@@ -1153,6 +1368,35 @@ export default function SprintsPage() {
                 </button>
                 <button style={styles.deleteBtn} onClick={handleDelete}>
                   Delete Sprint
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Bulk Delete Confirmation Modal */}
+        {showBulkDeleteModal && (
+          <div style={styles.modalOverlay} onClick={() => setShowBulkDeleteModal(false)}>
+            <div style={styles.confirmModal} onClick={(e) => e.stopPropagation()}>
+              <div style={styles.warningIcon}>
+                <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" fill="#ef4444" viewBox="0 0 16 16">
+                  <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z"/>
+                  <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z"/>
+                </svg>
+              </div>
+              <h3 style={styles.confirmTitle}>Delete {selectedSprintIds.length} Sprint{selectedSprintIds.length > 1 ? 's' : ''}?</h3>
+              <p style={styles.confirmText}>
+                Are you sure you want to delete <strong>{selectedSprintIds.length}</strong> selected sprint{selectedSprintIds.length > 1 ? 's' : ''}? All associated backlog items will be moved back to the backlog.
+              </p>
+              <div style={styles.confirmActions}>
+                <button
+                  style={styles.cancelBtn}
+                  onClick={() => setShowBulkDeleteModal(false)}
+                >
+                  Cancel
+                </button>
+                <button style={styles.deleteBtn} onClick={handleBulkDelete}>
+                  Delete {selectedSprintIds.length} Sprint{selectedSprintIds.length > 1 ? 's' : ''}
                 </button>
               </div>
             </div>
@@ -1434,6 +1678,90 @@ const styles: { [key: string]: React.CSSProperties } = {
     minWidth: '60px',
     textAlign: 'center',
   },
+  // Selection Bar
+  selectionBar: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '12px 16px',
+    background: '#f9fafb',
+    borderRadius: '8px',
+    marginBottom: '16px',
+    border: '1px solid #e5e7eb',
+  },
+  selectAllLabel: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    fontSize: '14px',
+    color: '#4b5563',
+    cursor: 'pointer',
+    fontWeight: 500,
+  },
+  selectAllCheckbox: {
+    width: '18px',
+    height: '18px',
+    cursor: 'pointer',
+    accentColor: '#879BFF',
+  },
+  selectionActions: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+  },
+  selectedCount: {
+    fontSize: '14px',
+    color: '#6b7280',
+    fontWeight: 500,
+  },
+  clearSelectionBtn: {
+    padding: '6px 12px',
+    border: '1px solid #e5e7eb',
+    background: 'white',
+    color: '#6b7280',
+    borderRadius: '6px',
+    fontSize: '13px',
+    fontWeight: 500,
+    cursor: 'pointer',
+  },
+  bulkDeleteBtn: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    padding: '8px 16px',
+    background: '#ef4444',
+    color: 'white',
+    border: 'none',
+    borderRadius: '6px',
+    fontSize: '13px',
+    fontWeight: 600,
+    cursor: 'pointer',
+  },
+  cardCheckbox: {
+    width: '18px',
+    height: '18px',
+    cursor: 'pointer',
+    accentColor: '#879BFF',
+    flexShrink: 0,
+  },
+  selectButtonRow: {
+    display: 'flex',
+    justifyContent: 'flex-start',
+    marginBottom: '16px',
+  },
+  selectModeBtn: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '8px 16px',
+    background: 'white',
+    color: '#4b5563',
+    border: '1px solid #e5e7eb',
+    borderRadius: '8px',
+    fontSize: '14px',
+    fontWeight: 500,
+    cursor: 'pointer',
+  },
   // Views
   listView: {
     display: 'flex',
@@ -1517,6 +1845,10 @@ const styles: { [key: string]: React.CSSProperties } = {
     WebkitLineClamp: 2,
     WebkitBoxOrient: 'vertical',
   },
+  noDescription: {
+    fontStyle: 'italic',
+    color: '#9ca3af',
+  },
   sprintInfo: {
     display: 'flex',
     alignItems: 'center',
@@ -1563,6 +1895,13 @@ const styles: { [key: string]: React.CSSProperties } = {
     justifyContent: 'center',
     fontSize: '11px',
     fontWeight: 600,
+    border: '2px solid white',
+  },
+  managerAvatarImage: {
+    width: '28px',
+    height: '28px',
+    borderRadius: '50%',
+    objectFit: 'cover' as const,
     border: '2px solid white',
   },
   moreManagers: {
@@ -1812,6 +2151,44 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontSize: '11px',
     fontWeight: 600,
     textTransform: 'uppercase',
+  },
+  timeTrackedBadge: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '4px',
+    fontSize: '11px',
+    color: '#64748b',
+    fontWeight: 500,
+  },
+  assigneeBadge: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    fontSize: '11px',
+    color: '#64748b',
+    fontWeight: 500,
+    background: '#f1f5f9',
+    padding: '2px 8px 2px 2px',
+    borderRadius: '12px',
+  },
+  assigneeAvatar: {
+    width: '18px',
+    height: '18px',
+    borderRadius: '50%',
+    background: 'linear-gradient(135deg, #879BFF 0%, #FF6495 100%)',
+    color: 'white',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '10px',
+    fontWeight: 600,
+  },
+  assigneeAvatarImage: {
+    width: '18px',
+    height: '18px',
+    borderRadius: '50%',
+    objectFit: 'cover' as const,
+    border: '1px solid #e2e8f0',
   },
   taskStatusBadge: {
     padding: '2px 8px',

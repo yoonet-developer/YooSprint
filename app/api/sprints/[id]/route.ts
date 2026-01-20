@@ -12,7 +12,7 @@ export async function GET(
     const { id } = await params;
     const sprint = await Sprint.findById(id)
       .populate('createdBy', 'name email')
-      .populate('managers', 'name email position department');
+      .populate('managers', 'name email position department avatar');
 
     if (!sprint) {
       return errorResponse('Sprint not found', 404);
@@ -25,7 +25,7 @@ export async function GET(
 
     // Fetch backlog items for this sprint
     const backlogItems = await Backlog.find({ sprint: id })
-      .populate('assignee', 'name email position department')
+      .populate('assignee', 'name email position department avatar')
       .populate('createdBy', 'name email');
 
     return successResponse({

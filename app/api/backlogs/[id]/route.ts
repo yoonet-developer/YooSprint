@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { requireAuth, errorResponse, successResponse, checkAndUpdateSprintStatus } from '@/lib/utils/apiHelpers';
+import { requireAuth, errorResponse, successResponse, checkAndUpdateSprintStatus, updateProjectProgress } from '@/lib/utils/apiHelpers';
 import Backlog from '@/lib/models/Backlog';
 
 export async function GET(
@@ -10,7 +10,8 @@ export async function GET(
     const user = await requireAuth(request);
     const { id } = await params;
     const backlog = await Backlog.findById(id)
-      .populate('assignee', 'name email position department')
+      .populate('project', 'name slug category estimatedTime timeConsumed progress')
+      .populate('assignee', 'name email position department avatar')
       .populate('sprint', 'name status startDate endDate');
 
     if (!backlog) {
@@ -68,9 +69,20 @@ export async function PUT(
       await checkAndUpdateSprintStatus(updatedBacklog.sprint.toString());
     }
 
+    // Update project progress if taskStatus was updated or project changed
+    if (updatedBacklog.project && (body.taskStatus || body.project)) {
+      await updateProjectProgress(updatedBacklog.project.toString());
+      // If project changed, also update the old project's progress
+      if (body.project && existingBacklog.project &&
+          existingBacklog.project.toString() !== body.project) {
+        await updateProjectProgress(existingBacklog.project.toString());
+      }
+    }
+
     // Now populate the backlog for the response
     const backlog = await Backlog.findById(id)
-      .populate('assignee', 'name email position department')
+      .populate('project', 'name slug category estimatedTime timeConsumed progress')
+      .populate('assignee', 'name email position department avatar')
       .populate('sprint', 'name status startDate endDate');
 
     return successResponse({ backlog });
@@ -109,6 +121,11 @@ export async function DELETE(
     // If this backlog was part of a sprint, check if remaining items are all completed
     if (backlog.sprint) {
       await checkAndUpdateSprintStatus(backlog.sprint.toString());
+    }
+
+    // Update project progress after deleting backlog
+    if (backlog.project) {
+      await updateProjectProgress(backlog.project.toString());
     }
 
     return successResponse({ message: 'Backlog deleted successfully' });

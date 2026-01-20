@@ -24,8 +24,8 @@ const sprintSchema = new mongoose.Schema({
     default: 'planned'
   },
   project: {
-    type: String,
-    trim: true
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Project'
   },
   managers: [{
     type: mongoose.Schema.Types.ObjectId,

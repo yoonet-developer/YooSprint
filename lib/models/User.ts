@@ -2,6 +2,13 @@ import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 
 const userSchema = new mongoose.Schema({
+  yoonetId: {
+    type: String,
+    required: [true, 'Yoonet ID is required'],
+    unique: true,
+    trim: true,
+    uppercase: true
+  },
   username: {
     type: String,
     required: [true, 'Username is required'],
@@ -49,6 +56,18 @@ const userSchema = new mongoose.Schema({
   isActive: {
     type: Boolean,
     default: true
+  },
+  failedLoginAttempts: {
+    type: Number,
+    default: 0
+  },
+  lockUntil: {
+    type: Date,
+    default: null
+  },
+  pin: {
+    type: String,
+    default: null
   },
   createdAt: {
     type: Date,

@@ -3,6 +3,7 @@ import { verifyAuth } from '@/lib/middleware/auth';
 import dbConnect from '@/lib/db';
 import Sprint from '@/lib/models/Sprint';
 import Backlog from '@/lib/models/Backlog';
+import Project from '@/lib/models/Project';
 
 export async function requireAuth(request: NextRequest) {
   await dbConnect();
@@ -127,6 +128,37 @@ export async function checkAndUpdateSprintStatus(sprintId: string) {
     }
   } catch (error) {
     console.error('[checkAndUpdateSprintStatus] Error:', error);
+    // Don't throw error - this should not break the main operation
+  }
+}
+
+/**
+ * Calculate and update project progress based on completed backlogs
+ * Progress = (completed backlogs / total backlogs) * 100
+ */
+export async function updateProjectProgress(projectId: string) {
+  try {
+    // Get all backlog items for this project
+    const backlogItems = await Backlog.find({ project: projectId });
+
+    // If there are no backlog items, set progress to 0
+    if (backlogItems.length === 0) {
+      await Project.findByIdAndUpdate(projectId, { progress: 0 });
+      return;
+    }
+
+    // Count completed backlog items
+    const completedItems = backlogItems.filter(
+      (item) => item.taskStatus === 'completed'
+    ).length;
+
+    // Calculate progress percentage
+    const progress = Math.round((completedItems / backlogItems.length) * 100);
+
+    // Update project progress
+    await Project.findByIdAndUpdate(projectId, { progress });
+  } catch (error) {
+    console.error('[updateProjectProgress] Error:', error);
     // Don't throw error - this should not break the main operation
   }
 }

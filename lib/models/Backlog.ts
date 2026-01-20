@@ -16,9 +16,9 @@ const backlogSchema = new mongoose.Schema({
     default: 'medium'
   },
   project: {
-    type: String,
-    required: [true, 'Project is required'],
-    trim: true
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Project',
+    required: [true, 'Project is required']
   },
   storyPoints: {
     type: Number,
@@ -82,6 +82,35 @@ const backlogSchema = new mongoose.Schema({
     completed: {
       type: Boolean,
       default: false
+    }
+  }],
+  // Time tracking fields
+  timeTracked: {
+    type: Number,
+    default: 0  // Total time tracked in seconds
+  },
+  isTimerRunning: {
+    type: Boolean,
+    default: false
+  },
+  timerStartedAt: {
+    type: Date,
+    default: null
+  },
+  timeEntries: [{
+    startTime: {
+      type: Date,
+      required: true
+    },
+    endTime: {
+      type: Date
+    },
+    duration: {
+      type: Number  // Duration in seconds
+    },
+    note: {
+      type: String,
+      trim: true
     }
   }]
 }, {

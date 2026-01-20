@@ -27,10 +27,20 @@ interface Stats {
   pendingTasks?: number;
 }
 
+interface Project {
+  _id: string;
+  slug?: string;
+  name: string;
+  category: string;
+  estimatedTime: number;
+  timeConsumed: number;
+  progress: number;
+}
+
 interface Backlog {
   _id: string;
   title: string;
-  project: string;
+  project?: Project;
   taskStatus: string;
   status: string;
   priority: 'low' | 'medium' | 'high';
@@ -77,6 +87,19 @@ interface UpcomingTask {
   daysUntil: number;
 }
 
+interface PendingVerification {
+  _id: string;
+  userId: string;
+  userName: string;
+  userEmail: string;
+  department: string;
+  code: string;
+  createdAt: string;
+}
+
+// Verification code expires after 60 seconds
+const VERIFICATION_EXPIRY_SECONDS = 60;
+
 export default function DashboardPage() {
   const [user, setUser] = useState<User | null>(null);
   const [stats, setStats] = useState<Stats>({
@@ -93,6 +116,8 @@ export default function DashboardPage() {
   const [tasksNearingDeadline, setTasksNearingDeadline] = useState<TaskNearingDeadline[]>([]);
   const [overdueItems, setOverdueItems] = useState<OverdueItem[]>([]);
   const [upcomingTasks, setUpcomingTasks] = useState<UpcomingTask[]>([]);
+  const [pendingVerifications, setPendingVerifications] = useState<PendingVerification[]>([]);
+  const [verificationCountdowns, setVerificationCountdowns] = useState<{ [key: string]: number }>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedProject, setSelectedProject] = useState<string>('all');
@@ -104,6 +129,80 @@ export default function DashboardPage() {
     }
     fetchDashboardData();
   }, []);
+
+  // Helper function to calculate remaining seconds for a verification
+  const getRemainingSeconds = (createdAt: string): number => {
+    const created = new Date(createdAt).getTime();
+    const now = Date.now();
+    const elapsed = Math.floor((now - created) / 1000);
+    return Math.max(0, VERIFICATION_EXPIRY_SECONDS - elapsed);
+  };
+
+  // Poll for pending verifications every 5 seconds for admins/managers
+  useEffect(() => {
+    if (!user || !['super-admin', 'admin', 'manager'].includes(user.role)) return;
+
+    const fetchVerifications = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        const res = await fetch('/api/auth/pending-verifications', {
+          headers: { 'Authorization': `Bearer ${token}` },
+        });
+        const data = await res.json();
+        if (data.success) {
+          // Filter out expired verifications and update state
+          const validVerifications = data.verifications.filter((v: PendingVerification) =>
+            getRemainingSeconds(v.createdAt) > 0
+          );
+          setPendingVerifications(validVerifications);
+
+          // Initialize countdowns for new verifications
+          const newCountdowns: { [key: string]: number } = {};
+          validVerifications.forEach((v: PendingVerification) => {
+            newCountdowns[v._id] = getRemainingSeconds(v.createdAt);
+          });
+          setVerificationCountdowns(newCountdowns);
+        }
+      } catch (err) {
+        console.error('Error polling verifications:', err);
+      }
+    };
+
+    fetchVerifications();
+    const interval = setInterval(fetchVerifications, 5000);
+    return () => clearInterval(interval);
+  }, [user]);
+
+  // Update countdowns every second
+  useEffect(() => {
+    if (pendingVerifications.length === 0) return;
+
+    const interval = setInterval(() => {
+      setVerificationCountdowns(prev => {
+        const updated: { [key: string]: number } = {};
+        let hasExpired = false;
+
+        pendingVerifications.forEach(v => {
+          const remaining = getRemainingSeconds(v.createdAt);
+          updated[v._id] = remaining;
+          if (remaining <= 0) {
+            hasExpired = true;
+          }
+        });
+
+        // If any verification has expired, filter them out
+        if (hasExpired) {
+          setPendingVerifications(current =>
+            current.filter(v => getRemainingSeconds(v.createdAt) > 0)
+          );
+        }
+
+        return updated;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [pendingVerifications]);
 
   const fetchDashboardData = async () => {
     try {
@@ -132,6 +231,36 @@ export default function DashboardPage() {
         headers: { 'Authorization': `Bearer ${token}` },
       });
       const usersData = await usersRes.json();
+
+      // Fetch pending verifications for admins/managers
+      if (user && ['super-admin', 'admin', 'manager'].includes(user.role)) {
+        try {
+          const verificationsRes = await fetch('/api/auth/pending-verifications', {
+            headers: { 'Authorization': `Bearer ${token}` },
+          });
+          const verificationsData = await verificationsRes.json();
+          if (verificationsData.success) {
+            // Filter out expired verifications
+            const validVerifications = verificationsData.verifications.filter((v: PendingVerification) => {
+              const created = new Date(v.createdAt).getTime();
+              const elapsed = Math.floor((Date.now() - created) / 1000);
+              return elapsed < VERIFICATION_EXPIRY_SECONDS;
+            });
+            setPendingVerifications(validVerifications);
+
+            // Initialize countdowns
+            const newCountdowns: { [key: string]: number } = {};
+            validVerifications.forEach((v: PendingVerification) => {
+              const created = new Date(v.createdAt).getTime();
+              const elapsed = Math.floor((Date.now() - created) / 1000);
+              newCountdowns[v._id] = Math.max(0, VERIFICATION_EXPIRY_SECONDS - elapsed);
+            });
+            setVerificationCountdowns(newCountdowns);
+          }
+        } catch (err) {
+          console.error('Error fetching pending verifications:', err);
+        }
+      }
 
       const errors: string[] = [];
       if (!backlogsData.success) errors.push(`Backlogs: ${backlogsData.message || 'Failed to load'}`);
@@ -185,7 +314,7 @@ export default function DashboardPage() {
         setBacklogs(filteredBacklogs);
         setSprints(filteredSprints);
 
-        const projects = new Set(filteredBacklogs.map((b: Backlog) => b.project));
+        const projects = new Set(filteredBacklogs.map((b: Backlog) => b.project?._id).filter(Boolean));
         const activeSprints = filteredSprints.filter((s: Sprint) => s.status === 'active').length;
         const plannedSprints = filteredSprints.filter((s: Sprint) => s.status === 'planned').length;
         const completedSprints = filteredSprints.filter((s: Sprint) => s.status === 'completed').length;
@@ -323,49 +452,97 @@ export default function DashboardPage() {
         {/* Header */}
         <div style={styles.welcomeSection}>
           <div>
-            <h2 style={styles.welcomeTitle}>Welcome back, {user.name}!</h2>
-            <p style={styles.welcomeSubtitle}>Here's what's happening with your projects today</p>
+            <h2 style={{...styles.welcomeTitle, color: '#2d3748'}}>Welcome back, {user.name}!</h2>
+            <p style={{...styles.welcomeSubtitle, color: '#718096'}}>{user.role === 'member' ? "Here's what's happening with your tasks today" : "Here's what's happening with your projects today"}</p>
           </div>
         </div>
 
-        {/* Key Metrics - Admin/Manager */}
+        {/* Key Metrics with Verification - Admin/Manager */}
         {isAdminOrManager && (
-          <div style={styles.metricsGrid}>
-            {[
-              { label: 'Total Projects', value: stats.totalProjects, icon: 'projects', color: '#879BFF' },
-              { label: 'Active Sprints', value: stats.activeSprints, icon: 'sprints', color: '#FF6495' },
-              { label: 'Team Members', value: stats.teamMembers, icon: 'team', color: '#48bb78' },
-              { label: 'Completed Tasks', value: stats.completedBacklogs, icon: 'tasks', color: '#4299e1' },
-            ].map((metric) => (
-              <div key={metric.label} style={styles.metricCard}>
-                <div style={{...styles.metricIcon, background: `${metric.color}15`}}>
-                  {metric.icon === 'projects' && (
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill={metric.color} viewBox="0 0 16 16">
-                      <path d="M8.186 1.113a.5.5 0 0 0-.372 0L1.846 3.5 8 5.961 14.154 3.5zM15 4.239l-6.5 2.6v7.922l6.5-2.6V4.24zM7.5 14.762V6.838L1 4.239v7.923zM7.443.184a1.5 1.5 0 0 1 1.114 0l7.129 2.852A.5.5 0 0 1 16 3.5v8.662a1 1 0 0 1-.629.928l-7.185 2.874a.5.5 0 0 1-.372 0L.63 13.09a1 1 0 0 1-.63-.928V3.5a.5.5 0 0 1 .314-.464z"/>
-                    </svg>
-                  )}
-                  {metric.icon === 'sprints' && (
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill={metric.color} viewBox="0 0 16 16">
-                      <path d="M2.5 15a.5.5 0 1 1 0-1h1v-1a4.5 4.5 0 0 1 2.557-4.06c.29-.139.443-.377.443-.59v-.7c0-.213-.154-.451-.443-.59A4.5 4.5 0 0 1 3.5 3V2h-1a.5.5 0 0 1 0-1h11a.5.5 0 0 1 0 1h-1v1a4.5 4.5 0 0 1-2.557 4.06c-.29.139-.443.377-.443.59v.7c0 .213.154.451.443.59A4.5 4.5 0 0 1 12.5 13v1h1a.5.5 0 0 1 0 1zm2-13v1c0 .537.12 1.045.337 1.5h6.326c.216-.455.337-.963.337-1.5V2zm3 6.35c0 .701-.478 1.236-1.011 1.492A3.5 3.5 0 0 0 4.5 13s.866-1.299 3-1.48zm1 0v3.17c2.134.181 3 1.48 3 1.48a3.5 3.5 0 0 0-1.989-3.158C8.978 9.586 8.5 9.052 8.5 8.351z"/>
-                    </svg>
-                  )}
-                  {metric.icon === 'team' && (
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill={metric.color} viewBox="0 0 16 16">
-                      <path d="M7 14s-1 0-1-1 1-4 5-4 5 3 5 4-1 1-1 1zm4-6a3 3 0 1 0 0-6 3 3 0 0 0 0 6m-5.784 6A2.24 2.24 0 0 1 5 13c0-1.355.68-2.75 1.936-3.72A6.3 6.3 0 0 0 5 9c-4 0-5 3-5 4s1 1 1 1zM4.5 8a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5"/>
-                    </svg>
-                  )}
-                  {metric.icon === 'tasks' && (
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill={metric.color} viewBox="0 0 16 16">
-                      <path d="M10.97 4.97a.75.75 0 0 1 1.07 1.05l-3.99 4.99a.75.75 0 0 1-1.08.02L4.324 8.384a.75.75 0 1 1 1.06-1.06l2.094 2.093 3.473-4.425z"/>
-                    </svg>
-                  )}
+          <div style={styles.metricsWithVerificationRow}>
+            {/* Left: Key Metrics */}
+            <div style={styles.metricsGridCompact}>
+              {[
+                { label: 'Total Projects', value: stats.totalProjects, icon: 'projects', color: '#879BFF' },
+                { label: 'Active Sprints', value: stats.activeSprints, icon: 'sprints', color: '#FF6495' },
+                { label: 'Team Members', value: stats.teamMembers, icon: 'team', color: '#48bb78' },
+                { label: 'Completed Tasks', value: stats.completedBacklogs, icon: 'tasks', color: '#4299e1' },
+              ].map((metric) => (
+                <div key={metric.label} style={{...styles.metricCardCompact, background: 'white', border: '1px solid #e2e8f0'}}>
+                  <div style={{...styles.metricIconSmall, background: `${metric.color}15`}}>
+                    {metric.icon === 'projects' && (
+                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill={metric.color} viewBox="0 0 16 16">
+                        <path d="M8.186 1.113a.5.5 0 0 0-.372 0L1.846 3.5 8 5.961 14.154 3.5zM15 4.239l-6.5 2.6v7.922l6.5-2.6V4.24zM7.5 14.762V6.838L1 4.239v7.923zM7.443.184a1.5 1.5 0 0 1 1.114 0l7.129 2.852A.5.5 0 0 1 16 3.5v8.662a1 1 0 0 1-.629.928l-7.185 2.874a.5.5 0 0 1-.372 0L.63 13.09a1 1 0 0 1-.63-.928V3.5a.5.5 0 0 1 .314-.464z"/>
+                      </svg>
+                    )}
+                    {metric.icon === 'sprints' && (
+                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill={metric.color} viewBox="0 0 16 16">
+                        <path d="M2.5 15a.5.5 0 1 1 0-1h1v-1a4.5 4.5 0 0 1 2.557-4.06c.29-.139.443-.377.443-.59v-.7c0-.213-.154-.451-.443-.59A4.5 4.5 0 0 1 3.5 3V2h-1a.5.5 0 0 1 0-1h11a.5.5 0 0 1 0 1h-1v1a4.5 4.5 0 0 1-2.557 4.06c-.29.139-.443.377-.443.59v.7c0 .213.154.451.443.59A4.5 4.5 0 0 1 12.5 13v1h1a.5.5 0 0 1 0 1zm2-13v1c0 .537.12 1.045.337 1.5h6.326c.216-.455.337-.963.337-1.5V2zm3 6.35c0 .701-.478 1.236-1.011 1.492A3.5 3.5 0 0 0 4.5 13s.866-1.299 3-1.48zm1 0v3.17c2.134.181 3 1.48 3 1.48a3.5 3.5 0 0 0-1.989-3.158C8.978 9.586 8.5 9.052 8.5 8.351z"/>
+                      </svg>
+                    )}
+                    {metric.icon === 'team' && (
+                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill={metric.color} viewBox="0 0 16 16">
+                        <path d="M7 14s-1 0-1-1 1-4 5-4 5 3 5 4-1 1-1 1zm4-6a3 3 0 1 0 0-6 3 3 0 0 0 0 6m-5.784 6A2.24 2.24 0 0 1 5 13c0-1.355.68-2.75 1.936-3.72A6.3 6.3 0 0 0 5 9c-4 0-5 3-5 4s1 1 1 1zM4.5 8a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5"/>
+                      </svg>
+                    )}
+                    {metric.icon === 'tasks' && (
+                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill={metric.color} viewBox="0 0 16 16">
+                        <path d="M10.97 4.97a.75.75 0 0 1 1.07 1.05l-3.99 4.99a.75.75 0 0 1-1.08.02L4.324 8.384a.75.75 0 1 1 1.06-1.06l2.094 2.093 3.473-4.425z"/>
+                      </svg>
+                    )}
+                  </div>
+                  <div style={styles.metricContent}>
+                    <span style={{...styles.metricLabel, color: '#718096'}}>{metric.label}</span>
+                    <span style={{...styles.metricValueCompact, color: '#2d3748'}}>{metric.value}</span>
+                  </div>
                 </div>
-                <div style={styles.metricContent}>
-                  <span style={styles.metricLabel}>{metric.label}</span>
-                  <span style={styles.metricValue}>{metric.value}</span>
+              ))}
+            </div>
+
+            {/* Right: Verification Codes */}
+            <div style={styles.verificationAlert}>
+              <div style={styles.alertCardHeader}>
+                <div style={{...styles.alertCardIcon, background: '#667eea'}}>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="white" viewBox="0 0 16 16">
+                    <path d="M8 1a2 2 0 0 1 2 2v4H6V3a2 2 0 0 1 2-2m3 6V3a3 3 0 0 0-6 0v4a2 2 0 0 0-2 2v5a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2"/>
+                  </svg>
+                </div>
+                <div style={styles.alertCardTextGroup}>
+                  <h3 style={{...styles.alertCardTitle, color: '#5a67d8'}}>Login Verification</h3>
+                  <span style={{...styles.alertCardCount, color: '#667eea'}}>{pendingVerifications.length}</span>
                 </div>
               </div>
-            ))}
+              {pendingVerifications.length > 0 ? (
+                <div style={styles.alertItemsList}>
+                  {pendingVerifications.map((v) => {
+                    const remaining = verificationCountdowns[v._id] ?? getRemainingSeconds(v.createdAt);
+                    const isUrgent = remaining <= 15;
+                    return (
+                      <div key={v._id} style={styles.verificationItemRow}>
+                        <div style={styles.verificationNameRow}>
+                          <span style={styles.alertItemTitle}>{v.userName}</span>
+                          <span style={{
+                            ...styles.verificationCountdown,
+                            color: isUrgent ? '#dc2626' : '#667eea',
+                            background: isUrgent ? '#fee2e2' : '#e0e7ff',
+                          }}>
+                            {remaining}s
+                          </span>
+                        </div>
+                        <span style={styles.verificationCodeBadge}>{v.code}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div style={styles.alertEmptyState}>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" fill="#667eea" viewBox="0 0 16 16">
+                    <path d="M8 1a2 2 0 0 1 2 2v4H6V3a2 2 0 0 1 2-2m3 6V3a3 3 0 0 0-6 0v4a2 2 0 0 0-2 2v5a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2"/>
+                  </svg>
+                  <span style={styles.alertEmptyText}>No pending requests</span>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -373,19 +550,19 @@ export default function DashboardPage() {
         {user.role === 'member' && (
           <div style={styles.metricsGrid}>
             {[
-              { label: 'Total Projects', value: stats.totalProjects, color: '#879BFF' },
               { label: 'Total Tasks', value: stats.totalTasks, color: '#ed8936' },
               { label: 'Completed Tasks', value: stats.completedTasks, color: '#48bb78' },
+              { label: 'In Progress', value: stats.inProgressTasks, color: '#4299e1' },
             ].map((metric) => (
-              <div key={metric.label} style={styles.metricCard}>
+              <div key={metric.label} style={{...styles.metricCard, background: 'white', border: '1px solid #e2e8f0'}}>
                 <div style={{...styles.metricIcon, background: `${metric.color}15`}}>
                   <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill={metric.color} viewBox="0 0 16 16">
                     <path d="M10.97 4.97a.75.75 0 0 1 1.07 1.05l-3.99 4.99a.75.75 0 0 1-1.08.02L4.324 8.384a.75.75 0 1 1 1.06-1.06l2.094 2.093 3.473-4.425z"/>
                   </svg>
                 </div>
                 <div style={styles.metricContent}>
-                  <span style={styles.metricLabel}>{metric.label}</span>
-                  <span style={styles.metricValue}>{metric.value}</span>
+                  <span style={{...styles.metricLabel, color: '#718096'}}>{metric.label}</span>
+                  <span style={{...styles.metricValue, color: '#2d3748'}}>{metric.value}</span>
                 </div>
               </div>
             ))}
@@ -509,9 +686,9 @@ export default function DashboardPage() {
         {isAdminOrManager && (
           <div style={styles.mainContentGrid}>
             {/* Task Status */}
-            <div style={styles.contentCard}>
+            <div style={{...styles.contentCard, background: 'white', border: '1px solid #e2e8f0'}}>
               <div style={styles.contentCardHeader}>
-                <h3 style={styles.contentCardTitle}>Task Status</h3>
+                <h3 style={{...styles.contentCardTitle, color: '#2d3748'}}>Task Status</h3>
                 <Link href="/backlogs" style={styles.viewAllLink}>View All →</Link>
               </div>
               <div style={styles.taskStatusList}>
@@ -521,12 +698,12 @@ export default function DashboardPage() {
                   { label: 'Completed', count: stats.completedBacklogs, color: '#48bb78' },
                   { label: 'Backlog', count: stats.availableBacklogs, color: '#e2e8f0' },
                 ].map((status) => (
-                  <div key={status.label} style={styles.taskStatusItem}>
+                  <div key={status.label} style={{...styles.taskStatusItem, background: '#f7fafc'}}>
                     <div style={styles.taskStatusLeft}>
                       <div style={{...styles.taskStatusDot, background: status.color}} />
-                      <span style={styles.taskStatusLabel}>{status.label}</span>
+                      <span style={{...styles.taskStatusLabel, color: '#4a5568'}}>{status.label}</span>
                     </div>
-                    <span style={styles.taskStatusCount}>{status.count}</span>
+                    <span style={{...styles.taskStatusCount, color: '#2d3748'}}>{status.count}</span>
                   </div>
                 ))}
               </div>
@@ -544,9 +721,9 @@ export default function DashboardPage() {
             </div>
 
             {/* Tasks Nearing Deadline */}
-            <div style={styles.contentCard}>
+            <div style={{...styles.contentCard, background: 'white', border: '1px solid #e2e8f0'}}>
               <div style={styles.contentCardHeader}>
-                <h3 style={styles.contentCardTitle}>
+                <h3 style={{...styles.contentCardTitle, color: '#2d3748'}}>
                   <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" viewBox="0 0 16 16" style={{marginRight: '8px', verticalAlign: 'middle'}}>
                     <path d="M8.982 1.566a1.13 1.13 0 0 0-1.96 0L.165 13.233c-.457.778.091 1.767.98 1.767h13.713c.889 0 1.438-.99.98-1.767zM8 5c.535 0 .954.462.9.995l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 5.995A.905.905 0 0 1 8 5m.002 6a1 1 0 1 1 0 2 1 1 0 0 1 0-2"/>
                   </svg>
@@ -569,9 +746,9 @@ export default function DashboardPage() {
                     const isUrgent = task.daysUntilEnd <= 2;
                     const priorityColor = task.backlog.priority === 'high' ? '#f56565' : task.backlog.priority === 'medium' ? '#ed8936' : '#48bb78';
                     return (
-                      <div key={task.backlog._id} style={{...styles.urgentTaskCardCompact, borderLeft: `4px solid ${isUrgent ? '#f56565' : '#ed8936'}`}}>
+                      <div key={task.backlog._id} style={{...styles.urgentTaskCardCompact, borderLeft: `4px solid ${isUrgent ? '#f56565' : '#ed8936'}`, background: '#f7fafc', border: '1px solid #e2e8f0'}}>
                         <div style={styles.urgentTaskCompactHeader}>
-                          <h4 style={styles.urgentTaskTitleCompact}>{task.backlog.title}</h4>
+                          <h4 style={{...styles.urgentTaskTitleCompact, color: '#2d3748'}}>{task.backlog.title}</h4>
                           <span style={{...styles.urgentTaskBadgeCompact, background: isUrgent ? '#f5656515' : '#ed893615', color: isUrgent ? '#f56565' : '#ed8936'}}>
                             {task.daysUntilEnd === 0 ? 'Today' : task.daysUntilEnd === 1 ? '1 day' : `${task.daysUntilEnd}d`}
                           </span>
@@ -593,9 +770,9 @@ export default function DashboardPage() {
             </div>
 
             {/* Sprint Overview */}
-            <div style={styles.contentCard}>
+            <div style={{...styles.contentCard, background: 'white', border: '1px solid #e2e8f0'}}>
               <div style={styles.contentCardHeader}>
-                <h3 style={styles.contentCardTitle}>Sprint Overview</h3>
+                <h3 style={{...styles.contentCardTitle, color: '#2d3748'}}>Sprint Overview</h3>
                 <Link href="/sprints" style={styles.viewAllLink}>View All →</Link>
               </div>
               <div style={styles.sprintStatsGridVertical}>
@@ -604,20 +781,20 @@ export default function DashboardPage() {
                   { label: 'Planned', desc: 'Ready to start', value: stats.plannedSprints, color: '#4299e1' },
                   { label: 'Completed', desc: 'Successfully finished', value: stats.completedSprints, color: '#48bb78' },
                 ].map((sprint) => (
-                  <div key={sprint.label} style={styles.sprintStatItemVertical}>
+                  <div key={sprint.label} style={{...styles.sprintStatItemVertical, background: '#f7fafc'}}>
                     <div style={{...styles.sprintStatCircleSmall, borderColor: sprint.color, background: `${sprint.color}15`}}>
                       <span style={{...styles.sprintStatNumberSmall, color: sprint.color}}>{sprint.value}</span>
                     </div>
                     <div style={styles.sprintStatTextGroup}>
-                      <span style={styles.sprintStatLabelHorizontal}>{sprint.label}</span>
-                      <span style={styles.sprintStatDescription}>{sprint.desc}</span>
+                      <span style={{...styles.sprintStatLabelHorizontal, color: '#2d3748'}}>{sprint.label}</span>
+                      <span style={{...styles.sprintStatDescription, color: '#718096'}}>{sprint.desc}</span>
                     </div>
                   </div>
                 ))}
               </div>
               <div style={styles.progressSection}>
                 <div style={styles.progressHeader}>
-                  <span style={styles.progressLabel}>Overall Progress</span>
+                  <span style={{...styles.progressLabel, color: '#718096'}}>Overall Progress</span>
                   <span style={styles.progressPercentage}>
                     {sprints.length > 0 ? Math.round((stats.completedSprints / sprints.length) * 100) : 0}%
                   </span>
@@ -629,36 +806,45 @@ export default function DashboardPage() {
             </div>
 
             {/* Project Progress */}
-            <div style={styles.contentCard}>
+            <div style={{...styles.contentCard, background: 'white', border: '1px solid #e2e8f0'}}>
               <div style={styles.contentCardHeader}>
-                <h3 style={styles.contentCardTitle}>Project Progress</h3>
+                <h3 style={{...styles.contentCardTitle, color: '#2d3748'}}>Project Progress</h3>
                 <select
-                  style={styles.projectFilterSelect}
+                  style={{...styles.projectFilterSelect, background: '#f7fafc', border: '2px solid #e2e8f0', color: '#2d3748'}}
                   value={selectedProject}
                   onChange={(e) => setSelectedProject(e.target.value)}
                 >
                   <option value="all">All Projects</option>
-                  {Array.from(new Set(backlogs.map((b) => b.project))).sort().map((project) => (
-                    <option key={project} value={project}>{project}</option>
+                  {Array.from(
+                    new Map(
+                      backlogs
+                        .filter(b => b.project && b.project._id)
+                        .map(b => [b.project!._id, b.project!])
+                    ).values()
+                  ).sort((a, b) => a.name.localeCompare(b.name)).map((project) => (
+                    <option key={project._id} value={project._id}>{project.name}</option>
                   ))}
                 </select>
               </div>
               <div style={styles.scrollableProjectList}>
                 {(() => {
-                  const projectData = new Map<string, { total: number; completed: number; inProgress: number }>();
+                  const projectData = new Map<string, { name: string; slug: string; total: number; completed: number; inProgress: number }>();
                   backlogs.forEach((backlog) => {
-                    const project = backlog.project;
-                    if (!projectData.has(project)) {
-                      projectData.set(project, { total: 0, completed: 0, inProgress: 0 });
+                    const projectId = backlog.project?._id;
+                    const projectName = backlog.project?.name || 'No Project';
+                    const projectSlug = backlog.project?.slug || projectId || '';
+                    if (!projectId) return;
+                    if (!projectData.has(projectId)) {
+                      projectData.set(projectId, { name: projectName, slug: projectSlug, total: 0, completed: 0, inProgress: 0 });
                     }
-                    const data = projectData.get(project)!;
+                    const data = projectData.get(projectId)!;
                     data.total++;
                     if (backlog.taskStatus === 'completed') data.completed++;
                     else if (backlog.taskStatus === 'in-progress') data.inProgress++;
                   });
                   const filteredProjects = selectedProject === 'all'
                     ? Array.from(projectData.entries())
-                    : Array.from(projectData.entries()).filter(([project]) => project === selectedProject);
+                    : Array.from(projectData.entries()).filter(([projectId]) => projectId === selectedProject);
                   if (filteredProjects.length === 0) {
                     return (
                       <div style={styles.emptyState}>
@@ -669,13 +855,13 @@ export default function DashboardPage() {
                       </div>
                     );
                   }
-                  return filteredProjects.map(([project, data]) => {
+                  return filteredProjects.map(([projectId, data]) => {
                     const percentage = data.total > 0 ? Math.round((data.completed / data.total) * 100) : 0;
                     return (
-                      <Link key={project} href={`/timeline?view=project&project=${encodeURIComponent(project)}`} style={{textDecoration: 'none'}}>
-                        <div style={styles.projectProgressCardCompact}>
+                      <Link key={projectId} href={`/projects/${data.slug || projectId}`} style={{textDecoration: 'none'}}>
+                        <div style={{...styles.projectProgressCardCompact, background: '#f7fafc', border: '1px solid #e2e8f0'}}>
                           <div style={styles.projectProgressHeaderCompact}>
-                            <h4 style={styles.projectProgressTitleCompact}>{project}</h4>
+                            <h4 style={{...styles.projectProgressTitleCompact, color: '#2d3748'}}>{data.name}</h4>
                             <span style={styles.projectProgressPercentageCompact}>{percentage}%</span>
                           </div>
                           <div style={styles.projectProgressBar}>
@@ -683,15 +869,15 @@ export default function DashboardPage() {
                           </div>
                           <div style={styles.projectProgressStatsCompact}>
                             <div style={styles.projectProgressStatItemCompact}>
-                              <span style={styles.projectProgressStatLabelCompact}>Total</span>
-                              <span style={styles.projectProgressStatValueCompact}>{data.total}</span>
+                              <span style={{...styles.projectProgressStatLabelCompact, color: '#718096'}}>Total</span>
+                              <span style={{...styles.projectProgressStatValueCompact, color: '#2d3748'}}>{data.total}</span>
                             </div>
                             <div style={styles.projectProgressStatItemCompact}>
-                              <span style={styles.projectProgressStatLabelCompact}>Active</span>
+                              <span style={{...styles.projectProgressStatLabelCompact, color: '#718096'}}>Active</span>
                               <span style={{...styles.projectProgressStatValueCompact, color: '#879BFF'}}>{data.inProgress}</span>
                             </div>
                             <div style={styles.projectProgressStatItemCompact}>
-                              <span style={styles.projectProgressStatLabelCompact}>Done</span>
+                              <span style={{...styles.projectProgressStatLabelCompact, color: '#718096'}}>Done</span>
                               <span style={{...styles.projectProgressStatValueCompact, color: '#48bb78'}}>{data.completed}</span>
                             </div>
                           </div>
@@ -709,9 +895,9 @@ export default function DashboardPage() {
         {user.role === 'member' && (
           <div style={styles.mainContentGrid}>
             {/* Tasks Nearing Deadline */}
-            <div style={styles.contentCard}>
+            <div style={{...styles.contentCard, background: 'white', border: '1px solid #e2e8f0'}}>
               <div style={styles.contentCardHeader}>
-                <h3 style={styles.contentCardTitle}>Tasks Nearing Deadline</h3>
+                <h3 style={{...styles.contentCardTitle, color: '#2d3748'}}>Tasks Nearing Deadline</h3>
               </div>
               {tasksNearingDeadline.length === 0 ? (
                 <div style={styles.emptyState}>
@@ -725,12 +911,12 @@ export default function DashboardPage() {
                 <div style={styles.memberTaskList}>
                   {tasksNearingDeadline.map((task) => (
                     <Link key={task.backlog._id} href={`/tasks?taskId=${task.backlog._id}`} style={{textDecoration: 'none'}}>
-                      <div style={styles.memberTaskItem}>
+                      <div style={{...styles.memberTaskItem, background: '#f7fafc', border: '1px solid #e2e8f0'}}>
                         <div style={styles.memberTaskLeft}>
                           <div style={{...styles.memberTaskIndicator, background: task.daysUntilEnd <= 1 ? '#f56565' : '#ed8936'}} />
                           <div>
-                            <h4 style={styles.memberTaskTitle}>{task.backlog.title}</h4>
-                            <span style={styles.memberTaskMeta}>{task.backlog.project}</span>
+                            <h4 style={{...styles.memberTaskTitle, color: '#2d3748'}}>{task.backlog.title}</h4>
+                            <span style={{...styles.memberTaskMeta, color: '#718096'}}>{task.backlog.sprint?.name || 'No Sprint'}</span>
                           </div>
                         </div>
                         <span style={{...styles.memberTaskBadge, background: task.daysUntilEnd <= 1 ? '#f5656515' : '#ed893615', color: task.daysUntilEnd <= 1 ? '#f56565' : '#ed8936'}}>
@@ -744,9 +930,9 @@ export default function DashboardPage() {
             </div>
 
             {/* My Active Tasks */}
-            <div style={styles.contentCard}>
+            <div style={{...styles.contentCard, background: 'white', border: '1px solid #e2e8f0'}}>
               <div style={styles.contentCardHeader}>
-                <h3 style={styles.contentCardTitle}>My Active Tasks</h3>
+                <h3 style={{...styles.contentCardTitle, color: '#2d3748'}}>My Active Tasks</h3>
                 <Link href="/tasks" style={styles.viewAllLink}>View All →</Link>
               </div>
               {(() => {
@@ -766,12 +952,12 @@ export default function DashboardPage() {
                   <div style={styles.memberTaskList}>
                     {activeTasks.slice(0, 5).map((backlog) => (
                       <Link key={backlog._id} href={`/tasks?taskId=${backlog._id}`} style={{textDecoration: 'none'}}>
-                        <div style={styles.memberTaskItem}>
+                        <div style={{...styles.memberTaskItem, background: '#f7fafc', border: '1px solid #e2e8f0'}}>
                           <div style={styles.memberTaskLeft}>
                             <div style={{...styles.memberTaskIndicator, background: backlog.taskStatus === 'in-progress' ? '#4299e1' : '#718096'}} />
                             <div>
-                              <h4 style={styles.memberTaskTitle}>{backlog.title}</h4>
-                              <span style={styles.memberTaskMeta}>{backlog.project}</span>
+                              <h4 style={{...styles.memberTaskTitle, color: '#2d3748'}}>{backlog.title}</h4>
+                              <span style={{...styles.memberTaskMeta, color: '#718096'}}>{backlog.sprint?.name || 'No Sprint'}</span>
                             </div>
                           </div>
                           <span style={{...styles.memberTaskBadge, background: backlog.taskStatus === 'in-progress' ? '#4299e115' : '#71809615', color: backlog.taskStatus === 'in-progress' ? '#4299e1' : '#718096'}}>
@@ -804,16 +990,16 @@ const styles: { [key: string]: React.CSSProperties } = {
   metricLabel: { fontSize: '14px', color: '#718096', fontWeight: '500' },
   metricValue: { fontSize: '32px', fontWeight: '700', color: '#2d3748', lineHeight: '1' },
   alertsRow: { display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '20px', marginBottom: '24px' },
-  alertCard: { background: 'white', borderRadius: '12px', padding: '20px', border: '1px solid #e2e8f0' },
+  alertCard: { background: 'white', borderRadius: '12px', padding: '20px', border: '1px solid #e2e8f0', height: '220px', display: 'flex', flexDirection: 'column', overflow: 'hidden' },
   alertCardEmpty: { background: '#f8fafc' },
   overdueAlert: { background: '#fef2f2', border: '1px solid #fecaca' },
-  upcomingCard: { background: 'white', borderRadius: '12px', padding: '20px', border: '1px solid #e2e8f0' },
+  upcomingCard: { background: 'white', borderRadius: '12px', padding: '20px', border: '1px solid #e2e8f0', height: '220px', display: 'flex', flexDirection: 'column', overflow: 'hidden' },
   alertCardHeader: { display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' },
   alertCardIcon: { width: '36px', height: '36px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   alertCardTextGroup: { display: 'flex', alignItems: 'center', gap: '8px', flex: 1 },
   alertCardTitle: { fontSize: '15px', fontWeight: '600', margin: 0 },
   alertCardCount: { fontSize: '20px', fontWeight: '700' },
-  alertItemsList: { display: 'flex', flexDirection: 'column', gap: '10px' },
+  alertItemsList: { display: 'flex', flexDirection: 'column', gap: '10px', overflowY: 'auto', flex: 1 },
   overdueItemRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '12px', background: 'white', borderRadius: '8px', border: '1px solid #fecaca', gap: '12px' },
   alertItemContent: { flex: 1, minWidth: 0 },
   alertItemTitle: { fontSize: '13px', fontWeight: '600', color: '#1e293b', display: 'block', marginBottom: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
@@ -896,4 +1082,14 @@ const styles: { [key: string]: React.CSSProperties } = {
   errorTitle: { fontSize: '24px', fontWeight: '600', color: '#2d3748', margin: '0 0 12px 0' },
   errorMessage: { fontSize: '14px', color: '#718096', margin: '0 0 24px 0', lineHeight: '1.6' },
   retryButton: { background: 'linear-gradient(135deg, #879BFF 0%, #FF6495 100%)', color: 'white', border: 'none', padding: '14px 32px', borderRadius: '10px', fontSize: '14px', fontWeight: '600', cursor: 'pointer' },
+  metricsWithVerificationRow: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '24px' },
+  metricsGridCompact: { display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' },
+  metricCardCompact: { background: 'white', padding: '16px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', display: 'flex', alignItems: 'center', gap: '12px', border: '1px solid #f1f5f9' },
+  metricIconSmall: { width: '44px', height: '44px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  metricValueCompact: { fontSize: '24px', fontWeight: '700', color: '#2d3748', lineHeight: '1' },
+  verificationAlert: { background: '#f0f4ff', borderRadius: '12px', padding: '20px', border: '1px solid #c3dafe', height: '220px', overflow: 'hidden', display: 'flex', flexDirection: 'column' },
+  verificationItemRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', background: 'white', borderRadius: '8px', border: '1px solid #c3dafe', gap: '12px' },
+  verificationNameRow: { display: 'flex', alignItems: 'center', gap: '8px' },
+  verificationCodeBadge: { fontSize: '16px', fontWeight: '700', color: '#5a67d8', background: '#e0e7ff', padding: '6px 12px', borderRadius: '8px', letterSpacing: '2px', fontFamily: 'monospace', whiteSpace: 'nowrap', flexShrink: 0 },
+  verificationCountdown: { fontSize: '11px', fontWeight: '600', padding: '3px 8px', borderRadius: '6px', whiteSpace: 'nowrap' },
 };

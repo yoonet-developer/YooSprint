@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import AppLayout from '@/components/shared/AppLayout';
+import { cardFrames, getSelectedFrame } from '@/lib/utils/cardFrames';
 
 interface ChecklistItem {
   id: string;
@@ -9,12 +10,21 @@ interface ChecklistItem {
   completed: boolean;
 }
 
+interface Project {
+  _id: string;
+  name: string;
+  category: string;
+  estimatedTime: number;
+  timeConsumed: number;
+  progress: number;
+}
+
 interface Backlog {
   _id: string;
   title: string;
   description?: string;
   priority: 'low' | 'medium' | 'high';
-  project: string;
+  project: Project;
   storyPoints: number;
   status: 'backlog' | 'in-sprint' | 'done';
   taskStatus: 'pending' | 'in-progress' | 'completed';
@@ -23,6 +33,7 @@ interface Backlog {
     name: string;
     email: string;
     position: string;
+    avatar?: string;
   };
   sprint?: {
     _id: string;
@@ -68,6 +79,9 @@ export default function BacklogsPage() {
   const [backlogToRemove, setBacklogToRemove] = useState<Backlog | null>(null);
   const [showDeleteWarningModal, setShowDeleteWarningModal] = useState(false);
   const [backlogDeleteWarning, setBacklogDeleteWarning] = useState<Backlog | null>(null);
+  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
+  const [selectedBacklogIds, setSelectedBacklogIds] = useState<string[]>([]);
+  const [selectionMode, setSelectionMode] = useState(false);
   const [showAddToSprintModal, setShowAddToSprintModal] = useState(false);
   const [backlogToAddToSprint, setBacklogToAddToSprint] = useState<Backlog | null>(null);
   const [selectedSprintId, setSelectedSprintId] = useState<string>('');
@@ -87,12 +101,14 @@ export default function BacklogsPage() {
     checklist: [] as ChecklistItem[],
   });
   const [newChecklistItem, setNewChecklistItem] = useState('');
-  const [projects, setProjects] = useState<string[]>([]);
-  const [isAddingNewProject, setIsAddingNewProject] = useState(false);
-  const [newProjectName, setNewProjectName] = useState('');
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [allProjects, setAllProjects] = useState<Project[]>([]);
   const [projectSearchQuery, setProjectSearchQuery] = useState('');
   const [showProjectDropdown, setShowProjectDropdown] = useState(false);
   const projectDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Theme state
+  const [selectedFrame, setSelectedFrame] = useState<string>('default');
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -113,10 +129,32 @@ export default function BacklogsPage() {
       setCurrentUser(JSON.parse(userData));
     }
 
+    // Load selected frame from localStorage
+    const savedFrame = getSelectedFrame();
+    setSelectedFrame(savedFrame);
+
     fetchBacklogs();
     fetchUsers();
     fetchSprints();
+    fetchAllProjects();
   }, []);
+
+  const fetchAllProjects = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch('/api/projects', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+      const data = await response.json();
+      if (data.success) {
+        setAllProjects(data.projects);
+      }
+    } catch (error) {
+      console.error('Error fetching projects:', error);
+    }
+  };
 
   useEffect(() => {
     applyFilter();
@@ -138,8 +176,14 @@ export default function BacklogsPage() {
       const data = await response.json();
       if (data.success) {
         setBacklogs(data.backlogs);
-        const uniqueProjects = Array.from(new Set(data.backlogs.map((b: Backlog) => b.project)));
-        setProjects(uniqueProjects as string[]);
+        // Extract unique projects from backlogs
+        const projectMap = new Map<string, Project>();
+        data.backlogs.forEach((b: Backlog) => {
+          if (b.project && b.project._id) {
+            projectMap.set(b.project._id, b.project);
+          }
+        });
+        setProjects(Array.from(projectMap.values()));
       } else {
         console.error('[Frontend] Failed to fetch backlogs:', data.message);
       }
@@ -202,7 +246,7 @@ export default function BacklogsPage() {
       filtered = filtered.filter(b =>
         b.title.toLowerCase().includes(query) ||
         b.description?.toLowerCase().includes(query) ||
-        b.project.toLowerCase().includes(query) ||
+        b.project?.name?.toLowerCase().includes(query) ||
         b.assignee?.name.toLowerCase().includes(query)
       );
     }
@@ -247,8 +291,6 @@ export default function BacklogsPage() {
         checklist: formData.checklist,
       };
 
-      console.log('[Backlog] Saving payload:', payload);
-
       const response = await fetch(url, {
         method,
         headers: {
@@ -276,12 +318,11 @@ export default function BacklogsPage() {
   };
 
   const handleEdit = (backlog: Backlog) => {
-    console.log('[Backlog] Editing backlog:', backlog);
     setEditingBacklog(backlog);
     setFormData({
       title: backlog.title,
       description: backlog.description || '',
-      project: backlog.project,
+      project: backlog.project?._id || '',
       priority: backlog.priority,
       storyPoints: backlog.storyPoints,
       assignee: backlog.assignee?._id || '',
@@ -393,6 +434,65 @@ export default function BacklogsPage() {
     }
   };
 
+  const handleBulkDelete = async () => {
+    if (selectedBacklogIds.length === 0) return;
+
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch('/api/backlogs', {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({ ids: selectedBacklogIds }),
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        setShowBulkDeleteModal(false);
+        setSelectedBacklogIds([]);
+        fetchBacklogs();
+        showSuccess(`${data.deletedCount} backlog item(s) deleted successfully!`);
+      } else {
+        alert(data.message || 'Error deleting backlogs');
+      }
+    } catch (error) {
+      console.error('Error deleting backlogs:', error);
+      alert('Error deleting backlogs');
+    }
+  };
+
+  const toggleBacklogSelection = (backlogId: string) => {
+    setSelectedBacklogIds(prev =>
+      prev.includes(backlogId)
+        ? prev.filter(id => id !== backlogId)
+        : [...prev, backlogId]
+    );
+  };
+
+  const toggleSelectAll = () => {
+    // Only select backlogs that are not in a sprint (can be deleted)
+    const deletableBacklogs = paginatedBacklogs.filter(b => !b.sprint);
+    if (selectedBacklogIds.length === deletableBacklogs.length && deletableBacklogs.length > 0) {
+      setSelectedBacklogIds([]);
+    } else {
+      setSelectedBacklogIds(deletableBacklogs.map(b => b._id));
+    }
+  };
+
+  const clearSelection = () => {
+    setSelectedBacklogIds([]);
+    setSelectionMode(false);
+  };
+
+  const toggleSelectionMode = () => {
+    if (selectionMode) {
+      setSelectedBacklogIds([]);
+    }
+    setSelectionMode(!selectionMode);
+  };
+
   const resetForm = () => {
     setFormData({
       title: '',
@@ -406,8 +506,7 @@ export default function BacklogsPage() {
       checklist: [],
     });
     setEditingBacklog(null);
-    setIsAddingNewProject(false);
-    setNewProjectName('');
+    setProjectSearchQuery('');
     setNewChecklistItem('');
   };
 
@@ -481,8 +580,24 @@ export default function BacklogsPage() {
     );
   }
 
+  // Get current frame style
+  const frameStyle = cardFrames[selectedFrame] || cardFrames.default;
+
   return (
     <AppLayout>
+      {/* Frame animations for theme */}
+      {(selectedFrame === 'rainbow' || selectedFrame === 'frost') && (
+        <style>{`
+          @keyframes rainbowShift {
+            0% { filter: hue-rotate(0deg); }
+            100% { filter: hue-rotate(360deg); }
+          }
+          .rainbow-frame {
+            animation: rainbowShift 3s linear infinite;
+          }
+        `}</style>
+      )}
+
       <div style={styles.container}>
         {/* Header Section */}
         <div style={styles.headerSection}>
@@ -662,6 +777,50 @@ export default function BacklogsPage() {
           </div>
         )}
 
+        {/* Selection Bar */}
+        {currentUser?.role !== 'member' && paginatedBacklogs.length > 0 && (
+          selectionMode ? (
+            <div style={styles.selectionBar}>
+              <label style={styles.selectAllLabel}>
+                <input
+                  type="checkbox"
+                  checked={selectedBacklogIds.length === paginatedBacklogs.filter(b => !b.sprint).length && paginatedBacklogs.filter(b => !b.sprint).length > 0}
+                  onChange={toggleSelectAll}
+                  style={styles.selectAllCheckbox}
+                />
+                <span>Select All (not in sprint)</span>
+              </label>
+              <div style={styles.selectionActions}>
+                <span style={styles.selectedCount}>{selectedBacklogIds.length} selected</span>
+                <button style={styles.clearSelectionBtn} onClick={clearSelection}>
+                  Cancel
+                </button>
+                {selectedBacklogIds.length > 0 && (
+                  <button
+                    style={styles.bulkDeleteBtn}
+                    onClick={() => setShowBulkDeleteModal(true)}
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
+                      <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z"/>
+                      <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z"/>
+                    </svg>
+                    Delete Selected
+                  </button>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div style={styles.selectButtonRow}>
+              <button style={styles.selectModeBtn} onClick={toggleSelectionMode}>
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
+                  <path d="M14 1a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1zM2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2z"/>
+                </svg>
+                Select
+              </button>
+            </div>
+          )
+        )}
+
         {/* Backlog Items */}
         {filteredBacklogs.length === 0 ? (
           <div style={styles.emptyState}>
@@ -682,23 +841,44 @@ export default function BacklogsPage() {
               return (
                 <div
                   key={backlog._id}
-                  style={viewMode === 'grid' ? styles.gridCard : styles.listCard}
+                  className={selectedFrame === 'rainbow' ? 'rainbow-frame' : selectedFrame === 'frost' ? 'frost-frame' : ''}
+                  style={{
+                    ...(viewMode === 'grid' ? styles.gridCard : styles.listCard),
+                    ...frameStyle,
+                  }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.borderColor = '#879BFF';
-                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(135, 155, 255, 0.15)';
+                    if (selectedFrame === 'default') {
+                      e.currentTarget.style.borderColor = '#879BFF';
+                      e.currentTarget.style.boxShadow = '0 4px 12px rgba(135, 155, 255, 0.15)';
+                    }
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.borderColor = '#e5e7eb';
-                    e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.05)';
+                    if (selectedFrame === 'default') {
+                      e.currentTarget.style.borderColor = '#e5e7eb';
+                      e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.05)';
+                    }
                   }}
                 >
-                  {/* Priority Indicator */}
-                  <div style={{...styles.priorityLine, backgroundColor: priorityConfig.color}} />
+                  {/* Theme Accent Line */}
+                  <div style={{
+                    ...styles.priorityLine,
+                    backgroundColor: frameStyle.accentGradient ? undefined : frameStyle.accentColor,
+                    background: frameStyle.accentGradient || frameStyle.accentColor,
+                  }} />
 
                   <div style={styles.cardContent}>
                     {/* Card Header */}
                     <div style={styles.cardHeader}>
                       <div style={styles.cardTitleRow}>
+                        {selectionMode && !backlog.sprint && (
+                          <input
+                            type="checkbox"
+                            checked={selectedBacklogIds.includes(backlog._id)}
+                            onChange={() => toggleBacklogSelection(backlog._id)}
+                            onClick={(e) => e.stopPropagation()}
+                            style={styles.cardCheckbox}
+                          />
+                        )}
                         <h3 style={styles.cardTitle}>{backlog.title}</h3>
                         <span style={{
                           ...styles.priorityBadge,
@@ -709,7 +889,7 @@ export default function BacklogsPage() {
                         </span>
                       </div>
                       <div style={styles.cardMeta}>
-                        <span style={styles.projectTag}>{backlog.project}</span>
+                        <span style={styles.projectTag}>{backlog.project?.name || 'No Project'}</span>
                         <span style={{
                           ...styles.statusBadge,
                           backgroundColor: statusConfig.bg,
@@ -721,23 +901,28 @@ export default function BacklogsPage() {
                     </div>
 
                     {/* Description */}
-                    {backlog.description && (
-                      <p style={styles.cardDescription}>{backlog.description}</p>
-                    )}
+                    <p style={{
+                      ...styles.cardDescription,
+                      ...(backlog.description ? {} : styles.noDescription)
+                    }}>
+                      {backlog.description || 'No description'}
+                    </p>
 
                     {/* Date Range */}
-                    {(backlog.startDate || backlog.endDate) && (
-                      <div style={styles.dateRow}>
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="#6b7280" viewBox="0 0 16 16">
-                          <path d="M3.5 0a.5.5 0 0 1 .5.5V1h8V.5a.5.5 0 0 1 1 0V1h1a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2h1V.5a.5.5 0 0 1 .5-.5M1 4v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V4z"/>
-                        </svg>
+                    <div style={styles.dateRow}>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="#6b7280" viewBox="0 0 16 16">
+                        <path d="M3.5 0a.5.5 0 0 1 .5.5V1h8V.5a.5.5 0 0 1 1 0V1h1a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2h1V.5a.5.5 0 0 1 .5-.5M1 4v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V4z"/>
+                      </svg>
+                      {(backlog.startDate || backlog.endDate) ? (
                         <span style={styles.dateText}>
                           {backlog.startDate && new Date(backlog.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                           {backlog.startDate && backlog.endDate && ' - '}
                           {backlog.endDate && new Date(backlog.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                         </span>
-                      </div>
-                    )}
+                      ) : (
+                        <span style={{...styles.dateText, ...styles.noDescription}}>No start date</span>
+                      )}
+                    </div>
 
                     {/* Sprint Badge */}
                     {backlog.sprint && (
@@ -751,23 +936,33 @@ export default function BacklogsPage() {
                     )}
 
                     {/* Checklist Count */}
-                    {backlog.checklist && backlog.checklist.length > 0 && (
-                      <div style={styles.checklistCount}>
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="#6b7280" viewBox="0 0 16 16">
-                          <path d="M14 1a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1zM2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2z"/>
-                          <path d="M10.97 4.97a.75.75 0 0 1 1.071 1.05l-3.992 4.99a.75.75 0 0 1-1.08.02L4.324 8.384a.75.75 0 1 1 1.06-1.06l2.094 2.093 3.473-4.425z"/>
-                        </svg>
+                    <div style={styles.checklistCount}>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="#6b7280" viewBox="0 0 16 16">
+                        <path d="M14 1a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1zM2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2z"/>
+                        <path d="M10.97 4.97a.75.75 0 0 1 1.071 1.05l-3.992 4.99a.75.75 0 0 1-1.08.02L4.324 8.384a.75.75 0 1 1 1.06-1.06l2.094 2.093 3.473-4.425z"/>
+                      </svg>
+                      {backlog.checklist && backlog.checklist.length > 0 ? (
                         <span style={styles.checklistCountText}>
                           {backlog.checklist.filter(item => item.completed).length}/{backlog.checklist.length}
                         </span>
-                      </div>
-                    )}
+                      ) : (
+                        <span style={{...styles.checklistCountText, ...styles.noDescription}}>No checklist</span>
+                      )}
+                    </div>
 
                     {/* Assignee */}
                     <div style={styles.assigneeRow}>
-                      <div style={styles.avatar}>
-                        {backlog.assignee?.name?.charAt(0) || '?'}
-                      </div>
+                      {backlog.assignee?.avatar ? (
+                        <img
+                          src={backlog.assignee.avatar}
+                          alt={backlog.assignee.name}
+                          style={styles.avatarImage}
+                        />
+                      ) : (
+                        <div style={styles.avatar}>
+                          {backlog.assignee?.name?.charAt(0) || '?'}
+                        </div>
+                      )}
                       <span style={styles.assigneeName}>
                         {backlog.assignee?.name || 'Unassigned'}
                       </span>
@@ -856,74 +1051,44 @@ export default function BacklogsPage() {
 
                 <div style={styles.formGroup}>
                   <label style={styles.label}>PROJECT</label>
-                  {!isAddingNewProject ? (
-                    <div ref={projectDropdownRef} style={{ position: 'relative' }}>
-                      <input
-                        type="text"
-                        style={styles.input}
-                        value={projectSearchQuery || formData.project}
-                        onChange={(e) => {
-                          setProjectSearchQuery(e.target.value);
-                          setShowProjectDropdown(true);
-                        }}
-                        onFocus={() => setShowProjectDropdown(true)}
-                        placeholder="Search or select project..."
-                        required={!formData.project}
-                      />
-                      {showProjectDropdown && (
-                        <div style={styles.dropdown}>
-                          {projects
-                            .filter((p) => p.toLowerCase().includes(projectSearchQuery.toLowerCase()))
-                            .map((p) => (
-                              <div
-                                key={p}
-                                style={styles.dropdownItem}
-                                onClick={() => {
-                                  setFormData({ ...formData, project: p });
-                                  setProjectSearchQuery('');
-                                  setShowProjectDropdown(false);
-                                }}
-                              >
-                                {p}
-                              </div>
-                            ))}
-                          <div
-                            style={{...styles.dropdownItem, color: '#879BFF', fontWeight: 500}}
-                            onClick={() => {
-                              setIsAddingNewProject(true);
-                              setFormData({ ...formData, project: '' });
-                              setProjectSearchQuery('');
-                              setShowProjectDropdown(false);
-                            }}
-                          >
-                            + Add New Project
+                  <div ref={projectDropdownRef} style={{ position: 'relative' }}>
+                    <input
+                      type="text"
+                      style={styles.input}
+                      value={projectSearchQuery || allProjects.find(p => p._id === formData.project)?.name || ''}
+                      onChange={(e) => {
+                        setProjectSearchQuery(e.target.value);
+                        setShowProjectDropdown(true);
+                      }}
+                      onFocus={() => setShowProjectDropdown(true)}
+                      placeholder="Search or select project..."
+                      required={!formData.project}
+                    />
+                    {showProjectDropdown && (
+                      <div style={styles.dropdown}>
+                        {allProjects
+                          .filter((p) => p.name.toLowerCase().includes(projectSearchQuery.toLowerCase()))
+                          .map((p) => (
+                            <div
+                              key={p._id}
+                              style={styles.dropdownItem}
+                              onClick={() => {
+                                setFormData({ ...formData, project: p._id });
+                                setProjectSearchQuery('');
+                                setShowProjectDropdown(false);
+                              }}
+                            >
+                              {p.name}
+                            </div>
+                          ))}
+                        {allProjects.filter((p) => p.name.toLowerCase().includes(projectSearchQuery.toLowerCase())).length === 0 && (
+                          <div style={{...styles.dropdownItem, color: '#9ca3af'}}>
+                            No projects found
                           </div>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                      <input
-                        type="text"
-                        style={{ ...styles.input, flex: 1 }}
-                        placeholder="Enter new project name"
-                        value={formData.project}
-                        onChange={(e) => setFormData({ ...formData, project: e.target.value })}
-                        required
-                        autoFocus
-                      />
-                      <button
-                        type="button"
-                        style={styles.backBtn}
-                        onClick={() => {
-                          setIsAddingNewProject(false);
-                          setFormData({ ...formData, project: '' });
-                        }}
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  )}
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 <div style={styles.formGroup}>
@@ -1113,6 +1278,35 @@ export default function BacklogsPage() {
                 </button>
                 <button style={styles.confirmRemoveBtn} onClick={handleRemoveFromSprint}>
                   Yes, Remove
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Bulk Delete Confirmation Modal */}
+        {showBulkDeleteModal && (
+          <div style={styles.modalOverlay} onClick={() => setShowBulkDeleteModal(false)}>
+            <div style={styles.confirmModal} onClick={(e) => e.stopPropagation()}>
+              <div style={styles.warningIcon}>
+                <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" fill="#ef4444" viewBox="0 0 16 16">
+                  <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z"/>
+                  <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z"/>
+                </svg>
+              </div>
+              <h3 style={styles.confirmTitle}>Delete {selectedBacklogIds.length} Backlog Item{selectedBacklogIds.length > 1 ? 's' : ''}?</h3>
+              <p style={styles.confirmText}>
+                Are you sure you want to delete <strong>{selectedBacklogIds.length}</strong> selected backlog item{selectedBacklogIds.length > 1 ? 's' : ''}? This action cannot be undone.
+              </p>
+              <div style={styles.confirmActions}>
+                <button
+                  style={styles.cancelBtn}
+                  onClick={() => setShowBulkDeleteModal(false)}
+                >
+                  Cancel
+                </button>
+                <button style={styles.deleteBtn} onClick={handleBulkDelete}>
+                  Delete {selectedBacklogIds.length} Item{selectedBacklogIds.length > 1 ? 's' : ''}
                 </button>
               </div>
             </div>
@@ -1481,6 +1675,100 @@ const styles: { [key: string]: React.CSSProperties } = {
     minWidth: '60px',
     textAlign: 'center',
   },
+  // Selection Bar
+  selectionBar: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '12px 16px',
+    background: '#f9fafb',
+    borderRadius: '8px',
+    marginBottom: '16px',
+    border: '1px solid #e5e7eb',
+  },
+  selectAllLabel: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    fontSize: '14px',
+    color: '#4b5563',
+    cursor: 'pointer',
+    fontWeight: 500,
+  },
+  selectAllCheckbox: {
+    width: '18px',
+    height: '18px',
+    cursor: 'pointer',
+    accentColor: '#879BFF',
+  },
+  selectionActions: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+  },
+  selectedCount: {
+    fontSize: '14px',
+    color: '#6b7280',
+    fontWeight: 500,
+  },
+  clearSelectionBtn: {
+    padding: '6px 12px',
+    border: '1px solid #e5e7eb',
+    background: 'white',
+    color: '#6b7280',
+    borderRadius: '6px',
+    fontSize: '13px',
+    fontWeight: 500,
+    cursor: 'pointer',
+  },
+  bulkDeleteBtn: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    padding: '8px 16px',
+    background: '#ef4444',
+    color: 'white',
+    border: 'none',
+    borderRadius: '6px',
+    fontSize: '13px',
+    fontWeight: 600,
+    cursor: 'pointer',
+  },
+  cardCheckbox: {
+    width: '18px',
+    height: '18px',
+    cursor: 'pointer',
+    accentColor: '#879BFF',
+    flexShrink: 0,
+  },
+  selectButtonRow: {
+    display: 'flex',
+    justifyContent: 'flex-start',
+    marginBottom: '16px',
+  },
+  selectModeBtn: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '8px 16px',
+    background: 'white',
+    color: '#4b5563',
+    border: '1px solid #e5e7eb',
+    borderRadius: '8px',
+    fontSize: '14px',
+    fontWeight: 500,
+    cursor: 'pointer',
+  },
+  deleteBtn: {
+    padding: '12px 24px',
+    background: '#ef4444',
+    color: 'white',
+    border: 'none',
+    borderRadius: '8px',
+    fontSize: '14px',
+    fontWeight: 600,
+    cursor: 'pointer',
+  },
   // Views
   listView: {
     display: 'flex',
@@ -1584,6 +1872,10 @@ const styles: { [key: string]: React.CSSProperties } = {
     WebkitLineClamp: 2,
     WebkitBoxOrient: 'vertical',
   },
+  noDescription: {
+    fontStyle: 'italic',
+    color: '#9ca3af',
+  },
   dateRow: {
     display: 'flex',
     alignItems: 'center',
@@ -1621,6 +1913,13 @@ const styles: { [key: string]: React.CSSProperties } = {
     justifyContent: 'center',
     fontSize: '13px',
     fontWeight: 600,
+  },
+  avatarImage: {
+    width: '32px',
+    height: '32px',
+    borderRadius: '50%',
+    objectFit: 'cover' as const,
+    border: '2px solid #e5e7eb',
   },
   assigneeName: {
     fontSize: '14px',

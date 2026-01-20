@@ -10,7 +10,7 @@ export async function GET(
   try {
     const user = await requireAuth(request);
     const { id } = await params;
-    const task = await Task.findById(id).populate('assignee', 'name email department');
+    const task = await Task.findById(id).populate('assignee', 'name email department avatar');
 
     if (!task) {
       return errorResponse('Task not found', 404);
@@ -55,7 +55,7 @@ export async function PUT(
       id,
       body,
       { new: true, runValidators: true }
-    ).populate('assignee', 'name email department');
+    ).populate('assignee', 'name email department avatar');
 
     if (!task) {
       return errorResponse('Task not found', 404);
